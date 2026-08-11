@@ -28,12 +28,13 @@
   },
   "devEngines": {
     "packageManager": {
-      "name": "npm",
+      "name": "bun",
       "version": "*",
       "onFail": "download"
     }
   },
   "engines": {
     "node": ">=20.0.0"
-  }
+  },
+  "packageManager": "bun@1.3.14"
 }
