@@ -5,16 +5,20 @@ import {
   addProject,
   deleteProject,
   getAiAutoSelectEnabled,
+  getBodyTemplate,
   getDefaultProject,
   getOpenRouterApiKey,
   getOpenRouterEnabled,
   getOpenRouterModel,
   getProjects,
+  getTitlePrefix,
   setAiAutoSelectEnabled,
+  setBodyTemplate,
   setDefaultProject,
   setOpenRouterApiKey,
   setOpenRouterEnabled,
   setOpenRouterModel,
+  setTitlePrefix,
   updateProject,
   type Project,
 } from "./lib/db";
@@ -55,16 +59,20 @@ export default function App() {
   const [openRouterEnabled, setOpenRouterEnabledState] = useState(false);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
   const [openRouterModel, setOpenRouterModelState] = useState("deepseek/deepseek-chat");
+  const [titlePrefix, setTitlePrefixState] = useState("");
+  const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def, aiEnabled, orEnabled, orKey, orModel] = await Promise.all([
+      const [all, def, aiEnabled, orEnabled, orKey, orModel, prefix, bodyTpl] = await Promise.all([
         getProjects(),
         getDefaultProject(),
         getAiAutoSelectEnabled(),
         getOpenRouterEnabled(),
         getOpenRouterApiKey(),
         getOpenRouterModel(),
+        getTitlePrefix(),
+        getBodyTemplate(),
       ]);
       setProjects(all);
       if (def) {
@@ -74,6 +82,8 @@ export default function App() {
       setOpenRouterEnabledState(orEnabled);
       setOpenRouterApiKeyState(orKey);
       setOpenRouterModelState(orModel);
+      setTitlePrefixState(prefix);
+      setBodyTemplateState(bodyTpl);
     } finally {
       setProjectsLoading(false);
     }
@@ -94,31 +104,37 @@ export default function App() {
       setError(null);
       setCopied(false);
       try {
-        const fetchedTitle = await fetchTitle(trimmed);
+        const rawTitle = await fetchTitle(trimmed);
+        const finalTitle = `${titlePrefix}${rawTitle}`;
         let project = defaultProject || DEFAULT_PROJECT;
         if (openRouterEnabled && openRouterApiKey.trim()) {
           const orProject = await selectProjectWithOpenRouter(
             projects,
-            fetchedTitle,
+            rawTitle,
             openRouterApiKey,
             openRouterModel,
           );
           if (orProject) {
             project = orProject;
           } else if (aiAutoSelectEnabled) {
-            const aiProject = await selectProjectWithAi(projects, fetchedTitle);
+            const aiProject = await selectProjectWithAi(projects, rawTitle);
             if (aiProject) {
               project = aiProject;
             }
           }
         } else if (aiAutoSelectEnabled) {
-          const aiProject = await selectProjectWithAi(projects, fetchedTitle);
+          const aiProject = await selectProjectWithAi(projects, rawTitle);
           if (aiProject) {
             project = aiProject;
           }
         }
-        const url = buildCosenseUrl(project, fetchedTitle, trimmed);
-        setTitle(fetchedTitle);
+        let body = bodyTemplate.replaceAll("{{url}}", trimmed).replaceAll("{{title}}", rawTitle);
+        body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
+        if (!body.trim()) {
+          body = trimmed;
+        }
+        const url = buildCosenseUrl(project, finalTitle, body);
+        setTitle(finalTitle);
         setCosenseUrl(url);
         setSelectedProject(project);
       } catch (e) {
@@ -134,6 +150,8 @@ export default function App() {
       openRouterEnabled,
       openRouterApiKey,
       openRouterModel,
+      titlePrefix,
+      bodyTemplate,
     ],
   );
 
@@ -317,6 +335,24 @@ export default function App() {
     setOpenRouterModelState(model);
     try {
       await setOpenRouterModel(model);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
+  const handleTitlePrefixChange = async (prefix: string) => {
+    setTitlePrefixState(prefix);
+    try {
+      await setTitlePrefix(prefix);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
+  const handleBodyTemplateChange = async (template: string) => {
+    setBodyTemplateState(template);
+    try {
+      await setBodyTemplate(template);
     } catch (err) {
       setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
     }
@@ -599,6 +635,42 @@ export default function App() {
                     </div>
                   </>
                 )}
+              </div>
+
+              <div className="share-ai-settings">
+                <h3>タイトルと本文のカスタマイズ</h3>
+                <div className="share-project-field">
+                  <label htmlFor="title-prefix">タイトル接頭辞（任意）</label>
+                  <input
+                    id="title-prefix"
+                    type="text"
+                    value={titlePrefix}
+                    onChange={(e) => void handleTitlePrefixChange(e.target.value)}
+                    placeholder="例: [WebClip] "
+                    className="share-input"
+                  />
+                </div>
+                <div className="share-project-field">
+                  <label htmlFor="body-template">
+                    本文テンプレート（{"{{url}}"}, {"{{title}}"}, {"{{date}}"} が使用可能）
+                  </label>
+                  <textarea
+                    id="body-template"
+                    value={bodyTemplate}
+                    onChange={(e) => void handleBodyTemplateChange(e.target.value)}
+                    placeholder="{{url}}"
+                    className="share-input"
+                    rows={3}
+                    style={{ resize: "vertical" }}
+                  />
+                  <span className="share-project-counter">
+                    プレビュー:{" "}
+                    {bodyTemplate
+                      .replaceAll("{{url}}", "https://example.com")
+                      .replaceAll("{{title}}", "Example Title")
+                      .replaceAll("{{date}}", new Date().toISOString().slice(0, 10))}
+                  </span>
+                </div>
               </div>
 
               <div className="share-project-list">

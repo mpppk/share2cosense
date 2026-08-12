@@ -171,3 +171,25 @@ export async function setOpenRouterModel(model: string): Promise<void> {
   const db = await getDB();
   await db.put("settings", { key: "openRouterModel", value: model });
 }
+
+export async function getTitlePrefix(): Promise<string> {
+  const db = await getDB();
+  const record = await db.get("settings", "titlePrefix");
+  return record?.value ?? "";
+}
+
+export async function setTitlePrefix(prefix: string): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "titlePrefix", value: prefix });
+}
+
+export async function getBodyTemplate(): Promise<string> {
+  const db = await getDB();
+  const record = await db.get("settings", "bodyTemplate");
+  return record?.value ?? "{{url}}";
+}
+
+export async function setBodyTemplate(template: string): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "bodyTemplate", value: template });
+}
