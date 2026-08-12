@@ -85,48 +85,6 @@ export default function App() {
 
   return (
     <div className="share-root">
-      <nav className={`share-nav ${view}`}>
-        {view === "generate" ? (
-          <button
-            type="button"
-            className="share-icon-button"
-            onClick={() => handleViewChange("usage")}
-            aria-label="使い方を見る"
-            title="使い方"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-              <path
-                d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="share-back-button"
-            onClick={() => handleViewChange("generate")}
-            aria-label="リンク生成に戻る"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M19 12H5M12 19l-7-7 7-7"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            リンク生成に戻る
-          </button>
-        )}
-      </nav>
-
       <main className="share-container">
         {view === "generate" ? (
           <>
@@ -165,7 +123,7 @@ export default function App() {
                   rel="noopener noreferrer"
                   className="share-button primary large"
                 >
-                  Cosenseで開く
+                  Open in {DEFAULT_PROJECT}
                 </a>
                 <details className="share-details">
                   <summary>詳細を表示</summary>
@@ -200,45 +158,69 @@ export default function App() {
                 </details>
               </section>
             )}
+
+            <footer className="share-footer">
+              <button
+                type="button"
+                className="share-footer-link"
+                onClick={() => handleViewChange("usage")}
+              >
+                使い方を見る
+              </button>
+            </footer>
           </>
         ) : (
-          <section className="share-usage">
-            <h2>使い方</h2>
-            <p className="share-usage-description">
-              Web Share Targetで共有されたURLのタイトルを <code>fetch.nibk.sh?as=title</code>{" "}
-              で取得し、Cosenseページ作成リンクを生成するPWAです。
-              <br />
-              生成されたリンクを開くと{" "}
-              <code>https://scrapbox.io/{DEFAULT_PROJECT}/&lt;title&gt;?body=&lt;url&gt;</code>{" "}
-              で新規ページが作成されます。
-            </p>
-            <p className="share-project">
-              作成先プロジェクト: <code>{DEFAULT_PROJECT}</code>（現在は固定、将来選択式に対応予定）
-            </p>
-            <ol className="share-usage-steps">
-              <li>
-                スマホの「共有」から share2cosense を選択（PWAをインストールすると共有先に表示）
-              </li>
-              <li>または「リンク生成」画面の入力欄にURLを貼り付けて「リンク生成」</li>
-              <li>生成されたリンクをコピーまたは「Cosenseで開く」でページ作成</li>
-            </ol>
-            <details>
-              <summary>Share Targetの仕様（GET）</summary>
-              <p>
-                <code>?url=&lt;url&gt;&amp;text=&lt;text&gt;&amp;title=&lt;title&gt;</code>{" "}
-                で共有を受け取ります。 優先順位は <code>url</code> ＞ <code>text</code> 内URL ＞{" "}
-                <code>title</code> です。PWAの <code>manifest share_target</code> は{" "}
-                <code>action: &quot;/&quot; method: GET</code> で設定済みです。
+          <>
+            <section className="share-usage">
+              <h2>使い方</h2>
+              <p className="share-usage-description">
+                Web Share Targetで共有されたURLのタイトルを <code>fetch.nibk.sh?as=title</code>{" "}
+                で取得し、Cosenseページ作成リンクを生成するPWAです。
+                <br />
+                生成されたリンクを開くと{" "}
+                <code>
+                  https://scrapbox.io/{DEFAULT_PROJECT}/&lt;title&gt;?body=&lt;url&gt;
+                </code>{" "}
+                で新規ページが作成されます。
               </p>
-            </details>
-            <details>
-              <summary>タイトル取得の仕様</summary>
-              <p>
-                <code>https://fetch.nibk.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
-                で取得します。失敗時は共有元URL自体をタイトルとして使用します。
+              <p className="share-project">
+                作成先プロジェクト: <code>{DEFAULT_PROJECT}</code>
+                （現在は固定、将来選択式に対応予定）
               </p>
-            </details>
-          </section>
+              <ol className="share-usage-steps">
+                <li>
+                  スマホの「共有」から share2cosense を選択（PWAをインストールすると共有先に表示）
+                </li>
+                <li>または「リンク生成」画面の入力欄にURLを貼り付けて「リンク生成」</li>
+                <li>生成されたリンクをコピーまたは「Cosenseで開く」でページ作成</li>
+              </ol>
+              <details>
+                <summary>Share Targetの仕様（GET）</summary>
+                <p>
+                  <code>?url=&lt;url&gt;&amp;text=&lt;text&gt;&amp;title=&lt;title&gt;</code>{" "}
+                  で共有を受け取ります。 優先順位は <code>url</code> ＞ <code>text</code> 内URL ＞{" "}
+                  <code>title</code> です。PWAの <code>manifest share_target</code> は{" "}
+                  <code>action: &quot;/&quot; method: GET</code> で設定済みです。
+                </p>
+              </details>
+              <details>
+                <summary>タイトル取得の仕様</summary>
+                <p>
+                  <code>https://fetch.nibk.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
+                  で取得します。失敗時は共有元URL自体をタイトルとして使用します。
+                </p>
+              </details>
+            </section>
+            <footer className="share-footer">
+              <button
+                type="button"
+                className="share-footer-link"
+                onClick={() => handleViewChange("generate")}
+              >
+                リンク生成に戻る
+              </button>
+            </footer>
+          </>
         )}
       </main>
     </div>
