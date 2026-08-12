@@ -159,43 +159,45 @@ export default function App() {
 
             {cosenseUrl && title && (
               <section className="share-result" aria-live="polite">
-                <h2>生成結果</h2>
-                <dl className="share-result-list">
-                  <div>
-                    <dt>抽出タイトル</dt>
-                    <dd className="share-title">{title}</dd>
+                <a
+                  href={cosenseUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="share-button primary large"
+                >
+                  Cosenseで開く
+                </a>
+                <details className="share-details">
+                  <summary>詳細を表示</summary>
+                  <dl className="share-result-list">
+                    <div>
+                      <dt>抽出タイトル</dt>
+                      <dd className="share-title">{title}</dd>
+                    </div>
+                    <div>
+                      <dt>Cosenseリンク</dt>
+                      <dd>
+                        <a
+                          href={cosenseUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="share-link"
+                        >
+                          {cosenseUrl}
+                        </a>
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="share-actions">
+                    <button type="button" onClick={handleCopy} className="share-button secondary">
+                      {copied ? "コピーしました" : "リンクをコピー"}
+                    </button>
                   </div>
-                  <div>
-                    <dt>Cosenseリンク</dt>
-                    <dd>
-                      <a
-                        href={cosenseUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="share-link"
-                      >
-                        {cosenseUrl}
-                      </a>
-                    </dd>
-                  </div>
-                </dl>
-                <div className="share-actions">
-                  <button type="button" onClick={handleCopy} className="share-button secondary">
-                    {copied ? "コピーしました" : "リンクをコピー"}
-                  </button>
-                  <a
-                    href={cosenseUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="share-button secondary link"
-                  >
-                    Cosenseで開く
-                  </a>
-                </div>
-                <p className="share-hint">
-                  リンクを開くとCosenseで <code>{title}</code>{" "}
-                  ページが作成され、本文に共有元URLが自動挿入されます。既存ページの場合はそのページが開きます。
-                </p>
+                  <p className="share-hint">
+                    リンクを開くとCosenseで <code>{title}</code>{" "}
+                    ページが作成され、本文に共有元URLが自動挿入されます。既存ページの場合はそのページが開きます。
+                  </p>
+                </details>
               </section>
             )}
           </>
