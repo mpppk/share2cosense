@@ -6,13 +6,20 @@ import {
   deleteProject,
   getAiAutoSelectEnabled,
   getDefaultProject,
+  getOpenRouterApiKey,
+  getOpenRouterEnabled,
+  getOpenRouterModel,
   getProjects,
   setAiAutoSelectEnabled,
   setDefaultProject,
+  setOpenRouterApiKey,
+  setOpenRouterEnabled,
+  setOpenRouterModel,
   updateProject,
   type Project,
 } from "./lib/db";
 import { selectProjectWithAi } from "./lib/aiSelect";
+import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitle } from "./lib/fetchTitle";
 import "./App.css";
 
@@ -45,19 +52,28 @@ export default function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const [aiAutoSelectEnabled, setAiAutoSelectEnabledState] = useState(true);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [openRouterEnabled, setOpenRouterEnabledState] = useState(false);
+  const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
+  const [openRouterModel, setOpenRouterModelState] = useState("deepseek/deepseek-chat");
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def, aiEnabled] = await Promise.all([
+      const [all, def, aiEnabled, orEnabled, orKey, orModel] = await Promise.all([
         getProjects(),
         getDefaultProject(),
         getAiAutoSelectEnabled(),
+        getOpenRouterEnabled(),
+        getOpenRouterApiKey(),
+        getOpenRouterModel(),
       ]);
       setProjects(all);
       if (def) {
         setDefaultProjectState(def);
       }
       setAiAutoSelectEnabledState(aiEnabled);
+      setOpenRouterEnabledState(orEnabled);
+      setOpenRouterApiKeyState(orKey);
+      setOpenRouterModelState(orModel);
     } finally {
       setProjectsLoading(false);
     }
@@ -80,7 +96,22 @@ export default function App() {
       try {
         const fetchedTitle = await fetchTitle(trimmed);
         let project = defaultProject || DEFAULT_PROJECT;
-        if (aiAutoSelectEnabled) {
+        if (openRouterEnabled && openRouterApiKey.trim()) {
+          const orProject = await selectProjectWithOpenRouter(
+            projects,
+            fetchedTitle,
+            openRouterApiKey,
+            openRouterModel,
+          );
+          if (orProject) {
+            project = orProject;
+          } else if (aiAutoSelectEnabled) {
+            const aiProject = await selectProjectWithAi(projects, fetchedTitle);
+            if (aiProject) {
+              project = aiProject;
+            }
+          }
+        } else if (aiAutoSelectEnabled) {
           const aiProject = await selectProjectWithAi(projects, fetchedTitle);
           if (aiProject) {
             project = aiProject;
@@ -96,7 +127,14 @@ export default function App() {
         setLoading(false);
       }
     },
-    [defaultProject, aiAutoSelectEnabled, projects],
+    [
+      defaultProject,
+      aiAutoSelectEnabled,
+      projects,
+      openRouterEnabled,
+      openRouterApiKey,
+      openRouterModel,
+    ],
   );
 
   useEffect(() => {
@@ -252,6 +290,33 @@ export default function App() {
     try {
       await setAiAutoSelectEnabled(enabled);
       setAiAutoSelectEnabledState(enabled);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
+  const handleOpenRouterToggle = async (enabled: boolean) => {
+    try {
+      await setOpenRouterEnabled(enabled);
+      setOpenRouterEnabledState(enabled);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
+  const handleOpenRouterApiKeyChange = async (key: string) => {
+    setOpenRouterApiKeyState(key);
+    try {
+      await setOpenRouterApiKey(key);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
+  const handleOpenRouterModelChange = async (model: string) => {
+    setOpenRouterModelState(model);
+    try {
+      await setOpenRouterModel(model);
     } catch (err) {
       setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
     }
@@ -492,6 +557,48 @@ export default function App() {
                 <p className="share-settings-description" style={{ marginTop: "8px" }}>
                   有効の場合、プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。無効またはAIが利用できない場合はデフォルトプロジェクトが使用されます。
                 </p>
+              </div>
+
+              <div className="share-ai-settings">
+                <h3>OpenRouterによる自動選択</h3>
+                <label className="share-project-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={openRouterEnabled}
+                    onChange={(e) => void handleOpenRouterToggle(e.target.checked)}
+                  />
+                  有効にする（window.aiより優先）
+                </label>
+                <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                  OpenRouter経由で DeepSeek V4 Flash 0731
+                  等のモデルで自動選択します。デフォルト無効、有効時はwindow.aiより優先されます。APIキーはIndexedDBに保存されます。
+                </p>
+                {openRouterEnabled && (
+                  <>
+                    <div className="share-project-field">
+                      <label htmlFor="openrouter-key">APIキー</label>
+                      <input
+                        id="openrouter-key"
+                        type="password"
+                        value={openRouterApiKey}
+                        onChange={(e) => void handleOpenRouterApiKeyChange(e.target.value)}
+                        placeholder="sk-or-v1-..."
+                        className="share-input"
+                      />
+                    </div>
+                    <div className="share-project-field">
+                      <label htmlFor="openrouter-model">モデル</label>
+                      <input
+                        id="openrouter-model"
+                        type="text"
+                        value={openRouterModel}
+                        onChange={(e) => void handleOpenRouterModelChange(e.target.value)}
+                        placeholder="deepseek/deepseek-chat"
+                        className="share-input"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="share-project-list">
