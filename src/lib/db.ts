@@ -121,3 +121,17 @@ export async function setDefaultProject(name: string): Promise<void> {
   }
   await db.put("settings", { key: "defaultProject", value: name });
 }
+
+export async function getAiAutoSelectEnabled(): Promise<boolean> {
+  const db = await getDB();
+  const record = await db.get("settings", "aiAutoSelectEnabled");
+  if (!record) {
+    return true;
+  }
+  return record.value === "true";
+}
+
+export async function setAiAutoSelectEnabled(enabled: boolean): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "aiAutoSelectEnabled", value: String(enabled) });
+}
