@@ -206,7 +206,7 @@ export default function App() {
             <section className="share-usage">
               <h2>使い方</h2>
               <p className="share-usage-description">
-                Web Share Targetで共有されたURLのタイトルを <code>fetch.nibk.sh?as=title</code>{" "}
+                Web Share Targetで共有されたURLのタイトルを <code>fetch.nibo.sh?as=title</code>{" "}
                 で取得し、Cosenseページ作成リンクを生成するPWAです。
                 <br />
                 生成されたリンクを開くと{" "}
@@ -238,7 +238,7 @@ export default function App() {
               <details>
                 <summary>タイトル取得の仕様</summary>
                 <p>
-                  <code>https://fetch.nibk.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
+                  <code>https://fetch.nibo.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
                   で取得します。失敗時は共有元URL自体をタイトルとして使用します。
                 </p>
               </details>
