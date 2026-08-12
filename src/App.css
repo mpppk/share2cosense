@@ -300,6 +300,23 @@
   }
 }
 
+.share-loading {
+  font-size: 13px;
+  color: var(--text);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 .share-error {
   color: #dc2626;
   font-size: 14px;

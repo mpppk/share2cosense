@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PROJECT } from "./config";
 import { buildCosenseUrl, extractSharedUrl } from "./lib/cosense";
 import { fetchTitle } from "./lib/fetchTitle";
@@ -23,15 +23,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const initialSharedRef = useRef<string | null>(null);
 
   const generate = useCallback(async (rawUrl: string) => {
     const trimmed = rawUrl.trim();
-    if (!trimmed) {
-      setError("URLを入力してください");
-      return;
-    }
-    if (!isValidHttpUrl(trimmed)) {
-      setError("http:// または https:// で始まるURLを入力してください");
+    if (!trimmed || !isValidHttpUrl(trimmed)) {
       return;
     }
 
@@ -56,20 +52,58 @@ export default function App() {
     }
     const shared = extractSharedUrl(window.location.search);
     if (shared) {
+      initialSharedRef.current = shared;
       setInputUrl(shared);
       setView("generate");
-      void generate(shared);
     }
-  }, [generate]);
+  }, []);
+
+  useEffect(() => {
+    const trimmed = inputUrl.trim();
+
+    if (!trimmed) {
+      setTitle(null);
+      setCosenseUrl(null);
+      setError(null);
+      setCopied(false);
+      const url = new URL(window.location.href);
+      const hadUrl = url.searchParams.has("url");
+      if (hadUrl) {
+        url.searchParams.delete("url");
+        url.searchParams.delete("text");
+        url.searchParams.delete("title");
+        window.history.replaceState(null, "", url.pathname + url.search + window.location.hash);
+      }
+      return;
+    }
+
+    if (!isValidHttpUrl(trimmed)) {
+      setTitle(null);
+      setCosenseUrl(null);
+      const handler = setTimeout(() => {
+        setError("http:// または https:// で始まるURLを入力してください");
+      }, 400);
+      return () => clearTimeout(handler);
+    }
+
+    setError(null);
+    const handler = setTimeout(() => {
+      const newUrl = new URL(window.location.href);
+      if (newUrl.searchParams.get("url") !== trimmed) {
+        newUrl.searchParams.set("url", trimmed);
+        newUrl.searchParams.delete("text");
+        newUrl.searchParams.delete("title");
+        window.history.replaceState(null, "", newUrl.pathname + newUrl.search + newUrl.hash);
+      }
+      void generate(trimmed);
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [inputUrl, generate]);
 
   const handleViewChange = (next: View) => {
     setView(next);
     window.location.hash = next === "usage" ? "#usage" : "";
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    void generate(inputUrl);
   };
 
   const handleCopy = async () => {
@@ -88,7 +122,7 @@ export default function App() {
       <main className="share-container">
         {view === "generate" ? (
           <>
-            <form className="share-form" onSubmit={handleSubmit}>
+            <div className="share-form">
               <label htmlFor="url-input" className="share-label">
                 共有元URL
               </label>
@@ -104,16 +138,14 @@ export default function App() {
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <button type="submit" className="share-button" disabled={loading}>
-                  {loading ? "取得中..." : "リンク生成"}
-                </button>
               </div>
+              {loading && <p className="share-loading">タイトルを取得中...</p>}
               {error && (
                 <p className="share-error" role="alert">
                   {error}
                 </p>
               )}
-            </form>
+            </div>
 
             {cosenseUrl && title && (
               <section className="share-result" aria-live="polite">
