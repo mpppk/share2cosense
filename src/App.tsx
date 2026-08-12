@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PROJECT } from "./config";
 import { buildCosenseUrl, extractSharedUrl } from "./lib/cosense";
+import {
+  addProject,
+  deleteProject,
+  getDefaultProject,
+  getProjects,
+  setDefaultProject,
+  updateProject,
+  type Project,
+} from "./lib/db";
 import { fetchTitle } from "./lib/fetchTitle";
 import "./App.css";
 
-type View = "generate" | "usage";
+type View = "generate" | "usage" | "settings";
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -25,30 +34,59 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const initialSharedRef = useRef<string | null>(null);
 
-  const generate = useCallback(async (rawUrl: string) => {
-    const trimmed = rawUrl.trim();
-    if (!trimmed || !isValidHttpUrl(trimmed)) {
-      return;
-    }
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [defaultProject, setDefaultProjectState] = useState<string>(DEFAULT_PROJECT);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectForm, setProjectForm] = useState({ name: "", description: "", isPublic: false });
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
 
-    setLoading(true);
-    setError(null);
-    setCopied(false);
+  const loadProjects = useCallback(async () => {
     try {
-      const fetchedTitle = await fetchTitle(trimmed);
-      const url = buildCosenseUrl(DEFAULT_PROJECT, fetchedTitle, trimmed);
-      setTitle(fetchedTitle);
-      setCosenseUrl(url);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");
+      const [all, def] = await Promise.all([getProjects(), getDefaultProject()]);
+      setProjects(all);
+      if (def) {
+        setDefaultProjectState(def);
+      }
     } finally {
-      setLoading(false);
+      setProjectsLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
+
+  const generate = useCallback(
+    async (rawUrl: string) => {
+      const trimmed = rawUrl.trim();
+      if (!trimmed || !isValidHttpUrl(trimmed)) {
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setCopied(false);
+      try {
+        const fetchedTitle = await fetchTitle(trimmed);
+        const project = defaultProject || DEFAULT_PROJECT;
+        const url = buildCosenseUrl(project, fetchedTitle, trimmed);
+        setTitle(fetchedTitle);
+        setCosenseUrl(url);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [defaultProject],
+  );
+
+  useEffect(() => {
     if (window.location.hash === "#usage") {
       setView("usage");
+    } else if (window.location.hash === "#settings") {
+      setView("settings");
     }
     const shared = extractSharedUrl(window.location.search);
     if (shared) {
@@ -103,7 +141,16 @@ export default function App() {
 
   const handleViewChange = (next: View) => {
     setView(next);
-    window.location.hash = next === "usage" ? "#usage" : "";
+    if (next === "usage") {
+      window.location.hash = "#usage";
+    } else if (next === "settings") {
+      window.location.hash = "#settings";
+    } else {
+      window.location.hash = "";
+    }
+    if (next === "settings") {
+      void loadProjects();
+    }
   };
 
   const handleCopy = async () => {
@@ -114,6 +161,71 @@ export default function App() {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setError("クリップボードへのコピーに失敗しました");
+    }
+  };
+
+  const handleProjectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProjectError(null);
+    const name = projectForm.name.trim();
+    const description = projectForm.description.trim();
+    if (!name) {
+      setProjectError("プロジェクト名は必須です");
+      return;
+    }
+    if (description.length > 100) {
+      setProjectError("説明は100文字以内で入力してください");
+      return;
+    }
+    const project: Project = { name, description, isPublic: projectForm.isPublic };
+    try {
+      if (editingName) {
+        await updateProject(editingName, project);
+      } else {
+        await addProject(project);
+      }
+      setProjectForm({ name: "", description: "", isPublic: false });
+      setEditingName(null);
+      await loadProjects();
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "保存に失敗しました");
+    }
+  };
+
+  const handleEdit = (project: Project) => {
+    setProjectForm({
+      name: project.name,
+      description: project.description,
+      isPublic: project.isPublic,
+    });
+    setEditingName(project.name);
+    setProjectError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setProjectForm({ name: "", description: "", isPublic: false });
+    setEditingName(null);
+    setProjectError(null);
+  };
+
+  const handleDelete = async (name: string) => {
+    if (!confirm(`プロジェクト "${name}" を削除しますか？`)) {
+      return;
+    }
+    try {
+      await deleteProject(name);
+      await loadProjects();
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "削除に失敗しました");
+    }
+  };
+
+  const handleSetDefault = async (name: string) => {
+    try {
+      await setDefaultProject(name);
+      setDefaultProjectState(name);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "デフォルト設定に失敗しました");
     }
   };
 
@@ -139,6 +251,15 @@ export default function App() {
                   spellCheck={false}
                 />
               </div>
+              {projectsLoading ? (
+                <p className="share-loading">プロジェクトを読み込み中...</p>
+              ) : (
+                <p className="share-project-select">
+                  作成先: <code>{defaultProject}</code>（
+                  {projects.find((p) => p.name === defaultProject)?.isPublic ? "public" : "private"}
+                  )
+                </p>
+              )}
               {loading && <p className="share-loading">タイトルを取得中...</p>}
               {error && (
                 <p className="share-error" role="alert">
@@ -155,7 +276,7 @@ export default function App() {
                   rel="noopener noreferrer"
                   className="share-button primary large"
                 >
-                  Open in {DEFAULT_PROJECT}
+                  Open in {defaultProject}
                 </a>
                 <details className="share-details">
                   <summary>詳細を表示</summary>
@@ -195,13 +316,21 @@ export default function App() {
               <button
                 type="button"
                 className="share-footer-link"
+                onClick={() => handleViewChange("settings")}
+              >
+                プロジェクト設定
+              </button>
+              <span className="share-footer-separator">·</span>
+              <button
+                type="button"
+                className="share-footer-link"
                 onClick={() => handleViewChange("usage")}
               >
                 使い方を見る
               </button>
             </footer>
           </>
-        ) : (
+        ) : view === "usage" ? (
           <>
             <section className="share-usage">
               <h2>使い方</h2>
@@ -211,12 +340,12 @@ export default function App() {
                 <br />
                 生成されたリンクを開くと{" "}
                 <code>
-                  https://scrapbox.io/{DEFAULT_PROJECT}/&lt;title&gt;?body=&lt;url&gt;
+                  https://scrapbox.io/{defaultProject}/&lt;title&gt;?body=&lt;url&gt;
                 </code>{" "}
                 で新規ページが作成されます。
               </p>
               <p className="share-project">
-                作成先プロジェクト: <code>{DEFAULT_PROJECT}</code>
+                作成先プロジェクト: <code>{defaultProject}</code>
                 （現在は固定、将来選択式に対応予定）
               </p>
               <ol className="share-usage-steps">
@@ -242,6 +371,143 @@ export default function App() {
                   で取得します。失敗時は共有元URL自体をタイトルとして使用します。
                 </p>
               </details>
+            </section>
+            <footer className="share-footer">
+              <button
+                type="button"
+                className="share-footer-link"
+                onClick={() => handleViewChange("generate")}
+              >
+                リンク生成に戻る
+              </button>
+            </footer>
+          </>
+        ) : (
+          <>
+            <section className="share-settings">
+              <h2>プロジェクト設定</h2>
+              <p className="share-settings-description">
+                作成先プロジェクトを追加・編集・削除できます。説明は100文字以内、publicフラグは存在チェックに使用されます。
+              </p>
+
+              <form className="share-project-form" onSubmit={handleProjectSubmit}>
+                <div className="share-project-field">
+                  <label htmlFor="project-name">プロジェクト名 *</label>
+                  <input
+                    id="project-name"
+                    type="text"
+                    value={projectForm.name}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="niboshi-private"
+                    className="share-input"
+                    required
+                  />
+                </div>
+                <div className="share-project-field">
+                  <label htmlFor="project-description">説明（任意, 100文字以内）</label>
+                  <input
+                    id="project-description"
+                    type="text"
+                    value={projectForm.description}
+                    onChange={(e) =>
+                      setProjectForm((prev) => ({ ...prev, description: e.target.value }))
+                    }
+                    placeholder="例: 個人用のプライベートプロジェクト"
+                    className="share-input"
+                    maxLength={100}
+                  />
+                  <span className="share-project-counter">
+                    {projectForm.description.length}/100
+                  </span>
+                </div>
+                <label className="share-project-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={projectForm.isPublic}
+                    onChange={(e) =>
+                      setProjectForm((prev) => ({ ...prev, isPublic: e.target.checked }))
+                    }
+                  />
+                  publicプロジェクト
+                </label>
+                {projectError && (
+                  <p className="share-error" role="alert">
+                    {projectError}
+                  </p>
+                )}
+                <div className="share-project-actions">
+                  <button type="submit" className="share-button">
+                    {editingName ? "更新" : "追加"}
+                  </button>
+                  {editingName && (
+                    <button
+                      type="button"
+                      className="share-button secondary"
+                      onClick={handleCancelEdit}
+                    >
+                      キャンセル
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              <div className="share-project-list">
+                <h3>登録済みプロジェクト</h3>
+                {projectsLoading ? (
+                  <p className="share-loading">読み込み中...</p>
+                ) : projects.length === 0 ? (
+                  <p>プロジェクトがありません</p>
+                ) : (
+                  <ul>
+                    {projects.map((project) => (
+                      <li
+                        key={project.name}
+                        className={`share-project-item ${defaultProject === project.name ? "is-default" : ""}`}
+                      >
+                        <div className="share-project-info">
+                          <strong>{project.name}</strong>
+                          <span
+                            className={`share-project-badge ${project.isPublic ? "public" : "private"}`}
+                          >
+                            {project.isPublic ? "public" : "private"}
+                          </span>
+                          {defaultProject === project.name && (
+                            <span className="share-project-default">デフォルト</span>
+                          )}
+                          {project.description && (
+                            <p className="share-project-desc">{project.description}</p>
+                          )}
+                        </div>
+                        <div className="share-project-item-actions">
+                          <label className="share-project-default-radio">
+                            <input
+                              type="radio"
+                              name="defaultProject"
+                              checked={defaultProject === project.name}
+                              onChange={() => void handleSetDefault(project.name)}
+                            />
+                            デフォルト
+                          </label>
+                          <button
+                            type="button"
+                            className="share-button secondary small"
+                            onClick={() => handleEdit(project)}
+                          >
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            className="share-button secondary small"
+                            onClick={() => void handleDelete(project.name)}
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </section>
             <footer className="share-footer">
               <button
