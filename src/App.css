@@ -456,8 +456,71 @@
   top: 0;
   z-index: 10;
 
+  &.generate {
+    justify-content: flex-end;
+  }
+
+  &.usage {
+    justify-content: flex-start;
+  }
+
   @media (max-width: 1024px) {
-    padding: 12px 20px;
+    padding: 10px 16px;
+  }
+}
+
+.share-icon-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s;
+
+  &:hover {
+    background: var(--code-bg);
+    border-color: var(--border);
+    color: var(--text-h);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.share-back-button {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+
+  &:hover {
+    background: var(--code-bg);
+    color: var(--text-h);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 

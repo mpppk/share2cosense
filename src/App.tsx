@@ -85,21 +85,46 @@ export default function App() {
 
   return (
     <div className="share-root">
-      <nav className="share-nav">
-        <button
-          type="button"
-          className={`share-nav-button ${view === "generate" ? "active" : ""}`}
-          onClick={() => handleViewChange("generate")}
-        >
-          リンク生成
-        </button>
-        <button
-          type="button"
-          className={`share-nav-button ${view === "usage" ? "active" : ""}`}
-          onClick={() => handleViewChange("usage")}
-        >
-          使い方
-        </button>
+      <nav className={`share-nav ${view}`}>
+        {view === "generate" ? (
+          <button
+            type="button"
+            className="share-icon-button"
+            onClick={() => handleViewChange("usage")}
+            aria-label="使い方を見る"
+            title="使い方"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="share-back-button"
+            onClick={() => handleViewChange("generate")}
+            aria-label="リンク生成に戻る"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M19 12H5M12 19l-7-7 7-7"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            リンク生成に戻る
+          </button>
+        )}
       </nav>
 
       <main className="share-container">
