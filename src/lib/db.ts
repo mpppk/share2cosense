@@ -135,3 +135,39 @@ export async function setAiAutoSelectEnabled(enabled: boolean): Promise<void> {
   const db = await getDB();
   await db.put("settings", { key: "aiAutoSelectEnabled", value: String(enabled) });
 }
+
+export async function getOpenRouterEnabled(): Promise<boolean> {
+  const db = await getDB();
+  const record = await db.get("settings", "openRouterEnabled");
+  if (!record) {
+    return false;
+  }
+  return record.value === "true";
+}
+
+export async function setOpenRouterEnabled(enabled: boolean): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "openRouterEnabled", value: String(enabled) });
+}
+
+export async function getOpenRouterApiKey(): Promise<string> {
+  const db = await getDB();
+  const record = await db.get("settings", "openRouterApiKey");
+  return record?.value ?? "";
+}
+
+export async function setOpenRouterApiKey(apiKey: string): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "openRouterApiKey", value: apiKey });
+}
+
+export async function getOpenRouterModel(): Promise<string> {
+  const db = await getDB();
+  const record = await db.get("settings", "openRouterModel");
+  return record?.value ?? "deepseek/deepseek-chat";
+}
+
+export async function setOpenRouterModel(model: string): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "openRouterModel", value: model });
+}
