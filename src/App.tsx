@@ -4,12 +4,15 @@ import { buildCosenseUrl, extractSharedUrl } from "./lib/cosense";
 import {
   addProject,
   deleteProject,
+  getAiAutoSelectEnabled,
   getDefaultProject,
   getProjects,
+  setAiAutoSelectEnabled,
   setDefaultProject,
   updateProject,
   type Project,
 } from "./lib/db";
+import { selectProjectWithAi } from "./lib/aiSelect";
 import { fetchTitle } from "./lib/fetchTitle";
 import "./App.css";
 
@@ -40,14 +43,21 @@ export default function App() {
   const [projectForm, setProjectForm] = useState({ name: "", description: "", isPublic: false });
   const [editingName, setEditingName] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [aiAutoSelectEnabled, setAiAutoSelectEnabledState] = useState(true);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def] = await Promise.all([getProjects(), getDefaultProject()]);
+      const [all, def, aiEnabled] = await Promise.all([
+        getProjects(),
+        getDefaultProject(),
+        getAiAutoSelectEnabled(),
+      ]);
       setProjects(all);
       if (def) {
         setDefaultProjectState(def);
       }
+      setAiAutoSelectEnabledState(aiEnabled);
     } finally {
       setProjectsLoading(false);
     }
@@ -69,17 +79,24 @@ export default function App() {
       setCopied(false);
       try {
         const fetchedTitle = await fetchTitle(trimmed);
-        const project = defaultProject || DEFAULT_PROJECT;
+        let project = defaultProject || DEFAULT_PROJECT;
+        if (aiAutoSelectEnabled) {
+          const aiProject = await selectProjectWithAi(projects, fetchedTitle);
+          if (aiProject) {
+            project = aiProject;
+          }
+        }
         const url = buildCosenseUrl(project, fetchedTitle, trimmed);
         setTitle(fetchedTitle);
         setCosenseUrl(url);
+        setSelectedProject(project);
       } catch (e) {
         setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");
       } finally {
         setLoading(false);
       }
     },
-    [defaultProject],
+    [defaultProject, aiAutoSelectEnabled, projects],
   );
 
   useEffect(() => {
@@ -102,6 +119,7 @@ export default function App() {
     if (!trimmed) {
       setTitle(null);
       setCosenseUrl(null);
+      setSelectedProject(null);
       setError(null);
       setCopied(false);
       const url = new URL(window.location.href);
@@ -118,6 +136,7 @@ export default function App() {
     if (!isValidHttpUrl(trimmed)) {
       setTitle(null);
       setCosenseUrl(null);
+      setSelectedProject(null);
       const handler = setTimeout(() => {
         setError("http:// または https:// で始まるURLを入力してください");
       }, 400);
@@ -229,6 +248,15 @@ export default function App() {
     }
   };
 
+  const handleAiToggle = async (enabled: boolean) => {
+    try {
+      await setAiAutoSelectEnabled(enabled);
+      setAiAutoSelectEnabledState(enabled);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
   return (
     <div className="share-root">
       <main className="share-container">
@@ -276,7 +304,7 @@ export default function App() {
                   rel="noopener noreferrer"
                   className="share-button primary large"
                 >
-                  Open in {defaultProject}
+                  Open in {selectedProject || defaultProject}
                 </a>
                 <details className="share-details">
                   <summary>詳細を表示</summary>
@@ -450,6 +478,21 @@ export default function App() {
                   )}
                 </div>
               </form>
+
+              <div className="share-ai-settings">
+                <h3>AIによる自動選択</h3>
+                <label className="share-project-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={aiAutoSelectEnabled}
+                    onChange={(e) => void handleAiToggle(e.target.checked)}
+                  />
+                  有効にする（window.ai / Gemini Nanoが利用可能な場合）
+                </label>
+                <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                  有効の場合、プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。無効またはAIが利用できない場合はデフォルトプロジェクトが使用されます。
+                </p>
+              </div>
 
               <div className="share-project-list">
                 <h3>登録済みプロジェクト</h3>
