@@ -64,6 +64,8 @@ export default function App() {
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
   const [pageExists, setPageExists] = useState<boolean | null>(null);
   const [checkingExists, setCheckingExists] = useState(false);
+  const [generatedBody, setGeneratedBody] = useState<string | null>(null);
+  const [aiSuggestedProject, setAiSuggestedProject] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -110,6 +112,7 @@ export default function App() {
         const rawTitle = await fetchTitle(trimmed);
         const finalTitle = `${titlePrefix}${rawTitle}`;
         let project = defaultProject || DEFAULT_PROJECT;
+        let aiResult: string | null = null;
         if (openRouterEnabled && openRouterApiKey.trim()) {
           const orProject = await selectProjectWithOpenRouter(
             projects,
@@ -119,16 +122,19 @@ export default function App() {
           );
           if (orProject) {
             project = orProject;
+            aiResult = orProject;
           } else if (aiAutoSelectEnabled) {
             const aiProject = await selectProjectWithAi(projects, rawTitle);
             if (aiProject) {
               project = aiProject;
+              aiResult = aiProject;
             }
           }
         } else if (aiAutoSelectEnabled) {
           const aiProject = await selectProjectWithAi(projects, rawTitle);
           if (aiProject) {
             project = aiProject;
+            aiResult = aiProject;
           }
         }
         let body = bodyTemplate.replaceAll("{{url}}", trimmed).replaceAll("{{title}}", rawTitle);
@@ -151,6 +157,8 @@ export default function App() {
         setTitle(finalTitle);
         setCosenseUrl(url);
         setSelectedProject(project);
+        setGeneratedBody(body);
+        setAiSuggestedProject(aiResult);
       } catch (e) {
         setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");
       } finally {
@@ -190,6 +198,8 @@ export default function App() {
       setTitle(null);
       setCosenseUrl(null);
       setSelectedProject(null);
+      setGeneratedBody(null);
+      setAiSuggestedProject(null);
       setPageExists(null);
       setCheckingExists(false);
       setError(null);
@@ -209,6 +219,8 @@ export default function App() {
       setTitle(null);
       setCosenseUrl(null);
       setSelectedProject(null);
+      setGeneratedBody(null);
+      setAiSuggestedProject(null);
       setPageExists(null);
       setCheckingExists(false);
       const handler = setTimeout(() => {
@@ -376,6 +388,30 @@ export default function App() {
     }
   };
 
+  const handleProjectChange = useCallback(
+    async (newProject: string) => {
+      setSelectedProject(newProject);
+      setCopied(false);
+      if (title && generatedBody) {
+        const newUrl = buildCosenseUrl(newProject, title, generatedBody);
+        setCosenseUrl(newUrl);
+        const projData = projects.find((p) => p.name === newProject);
+        if (projData?.isPublic) {
+          setCheckingExists(true);
+          try {
+            const exists = await checkPageExists(newProject, title, true);
+            setPageExists(exists);
+          } finally {
+            setCheckingExists(false);
+          }
+        } else {
+          setPageExists(null);
+        }
+      }
+    },
+    [title, generatedBody, projects],
+  );
+
   return (
     <div className="share-root">
       <main className="share-container">
@@ -401,11 +437,40 @@ export default function App() {
               {projectsLoading ? (
                 <p className="share-loading">プロジェクトを読み込み中...</p>
               ) : (
-                <p className="share-project-select">
-                  作成先: <code>{defaultProject}</code>（
-                  {projects.find((p) => p.name === defaultProject)?.isPublic ? "public" : "private"}
-                  )
-                </p>
+                <div className="share-project-field">
+                  <label htmlFor="project-select" className="share-label">
+                    作成先プロジェクト
+                  </label>
+                  <select
+                    id="project-select"
+                    value={selectedProject ?? defaultProject}
+                    onChange={(e) => void handleProjectChange(e.target.value)}
+                    className="share-input share-select"
+                  >
+                    {projects.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name} ({p.isPublic ? "public" : "private"})
+                        {p.name === defaultProject ? " - デフォルト" : ""}
+                        {aiSuggestedProject === p.name ? " - AI提案" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {aiSuggestedProject &&
+                    selectedProject &&
+                    aiSuggestedProject !== selectedProject && (
+                      <p className="share-project-select">
+                        AIの提案: <code>{aiSuggestedProject}</code> から手動で変更しました
+                      </p>
+                    )}
+                  {!aiSuggestedProject &&
+                    selectedProject &&
+                    selectedProject !== defaultProject &&
+                    cosenseUrl && (
+                      <p className="share-project-select">
+                        デフォルト <code>{defaultProject}</code> から手動で変更しました
+                      </p>
+                    )}
+                </div>
               )}
               {loading && <p className="share-loading">タイトルを取得中...</p>}
               {error && (
@@ -500,7 +565,7 @@ export default function App() {
               </p>
               <p className="share-project">
                 作成先プロジェクト: <code>{defaultProject}</code>
-                （現在は固定、将来選択式に対応予定）
+                （AIが自動選択、セレクトボックスで手動変更可能）
               </p>
               <ol className="share-usage-steps">
                 <li>
