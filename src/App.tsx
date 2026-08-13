@@ -65,6 +65,7 @@ export default function App() {
   const [checkingExists, setCheckingExists] = useState(false);
   const [generatedBody, setGeneratedBody] = useState<string | null>(null);
   const [aiSuggestedProject, setAiSuggestedProject] = useState<string | null>(null);
+  const [lastFetchedUrl, setLastFetchedUrl] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -155,6 +156,7 @@ export default function App() {
         setSelectedProject(project);
         setGeneratedBody(body);
         setAiSuggestedProject(aiResult);
+        setLastFetchedUrl(trimmed);
       } catch (e) {
         setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");
       } finally {
@@ -199,6 +201,7 @@ export default function App() {
       setCheckingExists(false);
       setError(null);
       setCopied(false);
+      setLastFetchedUrl(null);
       const url = new URL(window.location.href);
       const hadUrl = url.searchParams.has("url");
       if (hadUrl) {
@@ -211,13 +214,6 @@ export default function App() {
     }
 
     if (!isValidHttpUrl(trimmed)) {
-      setTitle(null);
-      setCosenseUrl(null);
-      setSelectedProject(null);
-      setGeneratedBody(null);
-      setAiSuggestedProject(null);
-      setPageExists(null);
-      setCheckingExists(false);
       const handler = setTimeout(() => {
         setError("http:// または https:// で始まるURLを入力してください");
       }, 400);
@@ -225,19 +221,14 @@ export default function App() {
     }
 
     setError(null);
-    const handler = setTimeout(() => {
-      const newUrl = new URL(window.location.href);
-      if (newUrl.searchParams.get("url") !== trimmed) {
-        newUrl.searchParams.set("url", trimmed);
-        newUrl.searchParams.delete("text");
-        newUrl.searchParams.delete("title");
-        window.history.replaceState(null, "", newUrl.pathname + newUrl.search + newUrl.hash);
-      }
-      void generate(trimmed);
-    }, 300);
-
-    return () => clearTimeout(handler);
-  }, [inputUrl, generate]);
+    const newUrl = new URL(window.location.href);
+    if (newUrl.searchParams.get("url") !== trimmed) {
+      newUrl.searchParams.set("url", trimmed);
+      newUrl.searchParams.delete("text");
+      newUrl.searchParams.delete("title");
+      window.history.replaceState(null, "", newUrl.pathname + newUrl.search + newUrl.hash);
+    }
+  }, [inputUrl]);
 
   const handleViewChange = (next: View) => {
     setView(next);
@@ -398,6 +389,67 @@ export default function App() {
     [title, generatedBody, projects],
   );
 
+  const handleTitleChange = useCallback(
+    async (newTitle: string) => {
+      setTitle(newTitle);
+      setCopied(false);
+      const trimmed = newTitle.trim();
+      if (!trimmed) {
+        setCosenseUrl(null);
+        setPageExists(null);
+        setCheckingExists(false);
+        return;
+      }
+      if (!generatedBody || !selectedProject) {
+        const fallbackBody = generatedBody ?? inputUrl.trim();
+        if (!fallbackBody) return;
+        const newUrl = buildCosenseUrl(selectedProject ?? defaultProject, newTitle, fallbackBody);
+        setCosenseUrl(newUrl);
+        if (!generatedBody) {
+          setGeneratedBody(fallbackBody);
+          if (!selectedProject) {
+            setSelectedProject(defaultProject);
+          }
+        }
+        const projData = projects.find((p) => p.name === (selectedProject ?? defaultProject));
+        if (projData?.isPublic) {
+          setCheckingExists(true);
+          try {
+            const exists = await checkPageExists(selectedProject ?? defaultProject, newTitle, true);
+            setPageExists(exists);
+          } finally {
+            setCheckingExists(false);
+          }
+        } else {
+          setPageExists(null);
+        }
+        return;
+      }
+      const newUrl = buildCosenseUrl(selectedProject, newTitle, generatedBody);
+      setCosenseUrl(newUrl);
+      const projData = projects.find((p) => p.name === selectedProject);
+      if (projData?.isPublic) {
+        setCheckingExists(true);
+        try {
+          const exists = await checkPageExists(selectedProject, newTitle, true);
+          setPageExists(exists);
+        } finally {
+          setCheckingExists(false);
+        }
+      } else {
+        setPageExists(null);
+      }
+    },
+    [generatedBody, selectedProject, projects, inputUrl, defaultProject],
+  );
+
+  const trimmedInputUrl = inputUrl.trim();
+  const isValidUrl = isValidHttpUrl(trimmedInputUrl);
+  const showTitleField = loading || title !== null || isValidUrl;
+  const showCosenseActions = cosenseUrl !== null && title !== null && title.trim() !== "";
+  const isRefreshDisabled =
+    !trimmedInputUrl || !isValidUrl || loading || trimmedInputUrl === lastFetchedUrl;
+
   return (
     <div className="share-root">
       <main className="share-container">
@@ -420,6 +472,52 @@ export default function App() {
                   spellCheck={false}
                 />
               </div>
+
+              {showTitleField && (
+                <div className="share-project-field">
+                  <div className="share-label-row">
+                    <label htmlFor="title-input" className="share-label">
+                      タイトル
+                    </label>
+                    <button
+                      type="button"
+                      className="share-title-refresh"
+                      onClick={() => void generate(trimmedInputUrl)}
+                      disabled={isRefreshDisabled}
+                      title="タイトルを取得"
+                      aria-label="タイトルを取得"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                    </button>
+                  </div>
+                  <input
+                    id="title-input"
+                    type="text"
+                    value={title ?? ""}
+                    onChange={(e) => void handleTitleChange(e.target.value)}
+                    disabled={loading}
+                    className="share-input"
+                    placeholder={loading ? "タイトルを取得中..." : "タイトルを入力"}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+              )}
+
               {projectsLoading ? (
                 <p className="share-loading">プロジェクトを読み込み中...</p>
               ) : (
@@ -464,58 +562,99 @@ export default function App() {
                   {error}
                 </p>
               )}
-            </div>
 
-            {cosenseUrl && title && (
-              <section className="share-result" aria-live="polite">
-                <a
-                  href={cosenseUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="share-button primary large"
-                >
-                  Open in {selectedProject || defaultProject}
-                </a>
-                {checkingExists && <p className="share-loading">存在チェック中...</p>}
-                {pageExists && (
-                  <p className="share-warning" role="alert">
-                    ⚠️
-                    このタイトルのページは既に存在します。リンクを開くと既存ページに追記されます。
-                  </p>
-                )}
-                <details className="share-details">
-                  <summary>詳細を表示</summary>
-                  <dl className="share-result-list">
-                    <div>
-                      <dt>抽出タイトル</dt>
-                      <dd className="share-title">{title}</dd>
-                    </div>
-                    <div>
-                      <dt>Cosenseリンク</dt>
-                      <dd>
-                        <a
-                          href={cosenseUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="share-link"
-                        >
-                          {cosenseUrl}
-                        </a>
-                      </dd>
-                    </div>
-                  </dl>
-                  <div className="share-actions">
-                    <button type="button" onClick={handleCopy} className="share-button secondary">
-                      {copied ? "コピーしました" : "リンクをコピー"}
-                    </button>
-                  </div>
-                  <p className="share-hint">
-                    リンクを開くとCosenseで <code>{title}</code>{" "}
-                    ページが作成され、本文に共有元URLが自動挿入されます。既存ページの場合はそのページが開きます。
-                  </p>
-                </details>
-              </section>
-            )}
+              {showCosenseActions && (
+                <>
+                  <a
+                    href={cosenseUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="share-button primary large"
+                  >
+                    Open in {selectedProject || defaultProject}
+                  </a>
+                  {checkingExists && <p className="share-loading">存在チェック中...</p>}
+                  {pageExists && (
+                    <p className="share-warning" role="alert">
+                      ⚠️
+                      このタイトルのページは既に存在します。リンクを開くと既存ページに追記されます。
+                    </p>
+                  )}
+                  <details className="share-details">
+                    <summary>詳細を表示</summary>
+                    <dl className="share-result-list">
+                      <div>
+                        <dt>Cosenseリンク</dt>
+                        <dd>
+                          <div className="share-link-wrapper">
+                            <a
+                              href={cosenseUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="share-link"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                void handleCopy();
+                              }}
+                              title={copied ? "コピーしました" : "クリックしてコピー"}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  void handleCopy();
+                                }
+                              }}
+                            >
+                              {cosenseUrl}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopy()}
+                              className="share-copy-icon"
+                              aria-label={copied ? "コピーしました" : "リンクをコピー"}
+                              title={copied ? "コピーしました" : "リンクをコピー"}
+                            >
+                              {copied ? (
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden="true"
+                                >
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              ) : (
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden="true"
+                                >
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3" />
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                          {copied && <span className="share-copy-feedback">コピーしました</span>}
+                        </dd>
+                      </div>
+                    </dl>
+                  </details>
+                </>
+              )}
+            </div>
 
             <footer className="share-footer">
               <button
@@ -668,17 +807,15 @@ export default function App() {
                   >
                     <option value="none">自動選択しない</option>
                     {windowAiAvailable && (
-                      <option value="windowAi">ブラウザ内蔵AI (LanguageModel)</option>
+                      <option value="windowAi">Chrome Built-in AI (Gemini Nano)</option>
                     )}
                     <option value="deepSeek">DeepSeek</option>
                   </select>
                   {!windowAiAvailable && (
                     <p className="share-error" style={{ marginTop: "8px" }} role="alert">
-                      ブラウザ内蔵AI (LanguageModel / 旧 window.ai)
+                      Chrome Built-in AI (LanguageModel / 旧 window.ai)
                       はこの環境で利用できません。Chrome 138以降では window.ai は LanguageModel
-                      に置き換わりました。モデルはブラウザにより異なります（Chrome: Gemini
-                      Nano、Edge: Phi系など）。利用するにはブラウザの Prompt API
-                      を有効化しモデルをダウンロードしてください。Chromeの場合は
+                      に置き換わりました。利用するには Chrome の
                       chrome://flags/#prompt-api-for-gemini-nano と
                       chrome://flags/#optimization-guide-on-device-model を有効化し、
                       chrome://components でモデルをダウンロードしてください。
