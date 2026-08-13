@@ -79,9 +79,7 @@ export default function App() {
         getBodyTemplate(),
       ]);
       setProjects(all);
-      if (def) {
-        setDefaultProjectState(def);
-      }
+      setDefaultProjectState(def ?? "");
       setAiProviderState(provider);
       setWindowAiAvailable(isWindowAiAvailable());
       setOpenRouterApiKeyState(orKey);
@@ -114,8 +112,23 @@ export default function App() {
       try {
         const rawTitle = await fetchTitle(trimmed);
         const finalTitle = `${titlePrefix}${rawTitle}`;
-        let project = defaultProject || DEFAULT_PROJECT;
+        let body = bodyTemplate.replaceAll("{{url}}", trimmed).replaceAll("{{title}}", rawTitle);
+        body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
+        if (!body.trim()) {
+          body = trimmed;
+        }
+        let project = defaultProject || projects[0]?.name || "";
         let aiResult: string | null = null;
+        if (projects.length === 0 || !project) {
+          setTitle(finalTitle);
+          setGeneratedBody(body);
+          setSelectedProject(null);
+          setAiSuggestedProject(null);
+          setPageExists(null);
+          setCosenseUrl(null);
+          setError("プロジェクトが登録されていません。設定から追加してください");
+          return;
+        }
         if (aiProvider === "deepSeek" && openRouterApiKey.trim()) {
           const orProject = await selectProjectWithOpenRouter(
             projects,
@@ -133,11 +146,6 @@ export default function App() {
             project = aiProject;
             aiResult = aiProject;
           }
-        }
-        let body = bodyTemplate.replaceAll("{{url}}", trimmed).replaceAll("{{title}}", rawTitle);
-        body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
-        if (!body.trim()) {
-          body = trimmed;
         }
         const selectedProjectData = projects.find((p) => p.name === project);
         let exists: boolean | null = null;
@@ -400,22 +408,33 @@ export default function App() {
         setCheckingExists(false);
         return;
       }
+      const effectiveProject = selectedProject || defaultProject || projects[0]?.name || "";
+      if (!effectiveProject || projects.length === 0) {
+        setCosenseUrl(null);
+        setPageExists(null);
+        setCheckingExists(false);
+        if (!generatedBody && inputUrl.trim()) {
+          const fallbackBody = inputUrl.trim();
+          setGeneratedBody(fallbackBody);
+        }
+        return;
+      }
       if (!generatedBody || !selectedProject) {
         const fallbackBody = generatedBody ?? inputUrl.trim();
         if (!fallbackBody) return;
-        const newUrl = buildCosenseUrl(selectedProject ?? defaultProject, newTitle, fallbackBody);
+        const newUrl = buildCosenseUrl(effectiveProject, newTitle, fallbackBody);
         setCosenseUrl(newUrl);
         if (!generatedBody) {
           setGeneratedBody(fallbackBody);
           if (!selectedProject) {
-            setSelectedProject(defaultProject);
+            setSelectedProject(effectiveProject);
           }
         }
-        const projData = projects.find((p) => p.name === (selectedProject ?? defaultProject));
+        const projData = projects.find((p) => p.name === effectiveProject);
         if (projData?.isPublic) {
           setCheckingExists(true);
           try {
-            const exists = await checkPageExists(selectedProject ?? defaultProject, newTitle, true);
+            const exists = await checkPageExists(effectiveProject, newTitle, true);
             setPageExists(exists);
           } finally {
             setCheckingExists(false);
@@ -520,6 +539,23 @@ export default function App() {
 
               {projectsLoading ? (
                 <p className="share-loading">プロジェクトを読み込み中...</p>
+              ) : projects.length === 0 ? (
+                <div className="share-project-field">
+                  <label htmlFor="project-select" className="share-label">
+                    作成先プロジェクト
+                  </label>
+                  <p className="share-error" role="alert">
+                    プロジェクトが登録されていません。
+                    <button
+                      type="button"
+                      className="share-footer-link"
+                      onClick={() => handleViewChange("settings")}
+                    >
+                      設定
+                    </button>
+                    から追加してください
+                  </p>
+                </div>
               ) : (
                 <div className="share-project-field">
                   <label htmlFor="project-select" className="share-label">
@@ -527,7 +563,7 @@ export default function App() {
                   </label>
                   <select
                     id="project-select"
-                    value={selectedProject ?? defaultProject}
+                    value={selectedProject || defaultProject || projects[0]?.name || ""}
                     onChange={(e) => void handleProjectChange(e.target.value)}
                     className="share-input share-select"
                   >
@@ -571,7 +607,7 @@ export default function App() {
                     rel="noopener noreferrer"
                     className="share-button primary large"
                   >
-                    Open in {selectedProject || defaultProject}
+                    Open in {selectedProject || defaultProject || projects[0]?.name || ""}
                   </a>
                   {checkingExists && <p className="share-loading">存在チェック中...</p>}
                   {pageExists && (
@@ -684,13 +720,16 @@ export default function App() {
                 <br />
                 生成されたリンクを開くと{" "}
                 <code>
-                  https://scrapbox.io/{defaultProject}/&lt;title&gt;?body=&lt;url&gt;
+                  https://scrapbox.io/{defaultProject || projects[0]?.name || "(未設定)"}
+                  /&lt;title&gt;?body=&lt;url&gt;
                 </code>{" "}
                 で新規ページが作成されます。
               </p>
               <p className="share-project">
-                作成先プロジェクト: <code>{defaultProject}</code>
-                （AIが自動選択、セレクトボックスで手動変更可能）
+                作成先プロジェクト: <code>{defaultProject || projects[0]?.name || "(未設定)"}</code>
+                {projects.length === 0
+                  ? "（設定からプロジェクトを追加してください）"
+                  : "（AIが自動選択、セレクトボックスで手動変更可能）"}
               </p>
               <ol className="share-usage-steps">
                 <li>
@@ -742,7 +781,7 @@ export default function App() {
                     type="text"
                     value={projectForm.name}
                     onChange={(e) => setProjectForm((prev) => ({ ...prev, name: e.target.value }))}
-                    placeholder="niboshi-private"
+                    placeholder="my-project"
                     className="share-input"
                     required
                   />

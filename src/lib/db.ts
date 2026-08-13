@@ -46,16 +46,6 @@ function getDB(): Promise<IDBPDatabase<Share2CosenseDB>> {
 export async function getProjects(): Promise<Project[]> {
   const db = await getDB();
   const projects = await db.getAll("projects");
-  if (projects.length === 0) {
-    const defaultProject: Project = {
-      name: "niboshi-private",
-      description: "",
-      isPublic: false,
-    };
-    await db.put("projects", defaultProject);
-    await db.put("settings", { key: "defaultProject", value: defaultProject.name });
-    return [defaultProject];
-  }
   return projects;
 }
 
@@ -86,16 +76,14 @@ export async function updateProject(oldName: string, project: Project): Promise<
 
 export async function deleteProject(name: string): Promise<void> {
   const db = await getDB();
-  const projects = await db.getAll("projects");
-  if (projects.length <= 1) {
-    throw new Error("最後のプロジェクトは削除できません");
-  }
   await db.delete("projects", name);
   const defaultProject = await getDefaultProject();
   if (defaultProject === name) {
     const remaining = await db.getAll("projects");
     if (remaining.length > 0) {
       await setDefaultProject(remaining[0].name);
+    } else {
+      await db.delete("settings", "defaultProject");
     }
   }
 }
