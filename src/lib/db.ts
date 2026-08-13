@@ -70,18 +70,18 @@ export async function addProject(project: Project): Promise<void> {
 
 export async function updateProject(oldName: string, project: Project): Promise<void> {
   const db = await getDB();
+  const isDefault = (await getDefaultProject()) === oldName;
   if (oldName !== project.name) {
     const existing = await db.get("projects", project.name);
     if (existing) {
       throw new Error("同名のプロジェクトが既に存在します");
     }
     await db.delete("projects", oldName);
-    const defaultProject = await getDefaultProject();
-    if (defaultProject === oldName) {
-      await setDefaultProject(project.name);
-    }
   }
   await db.put("projects", project);
+  if (isDefault && oldName !== project.name) {
+    await setDefaultProject(project.name);
+  }
 }
 
 export async function deleteProject(name: string): Promise<void> {
