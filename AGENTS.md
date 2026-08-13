@@ -37,3 +37,7 @@ PRごとの開発は git worktree を使用して行う。
   ```
 - worktree 一覧の確認: `git worktree list`
 - 作業完了後の削除: `git worktree remove /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name>`
+
+## Dev Server - Port
+
+`vite.config.ts:7` で `server.port` を `0` に設定し、OSが空きポートをランダムに割り当てる。複数の git worktree で同時に `vp dev` を実行してもポート衝突しない。各インスタンスは起動ログの `Local: http://localhost:<port>/` で確認する。
