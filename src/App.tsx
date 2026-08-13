@@ -4,25 +4,24 @@ import { buildCosenseUrl, extractSharedUrl } from "./lib/cosense";
 import {
   addProject,
   deleteProject,
-  getAiAutoSelectEnabled,
+  getAiProvider,
   getBodyTemplate,
   getDefaultProject,
   getOpenRouterApiKey,
-  getOpenRouterEnabled,
   getOpenRouterModel,
   getProjects,
   getTitlePrefix,
-  setAiAutoSelectEnabled,
+  setAiProvider,
   setBodyTemplate,
   setDefaultProject,
   setOpenRouterApiKey,
-  setOpenRouterEnabled,
   setOpenRouterModel,
   setTitlePrefix,
   updateProject,
+  type AiProvider,
   type Project,
 } from "./lib/db";
-import { selectProjectWithAi } from "./lib/aiSelect";
+import { isWindowAiAvailable, selectProjectWithAi } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitle } from "./lib/fetchTitle";
@@ -55,9 +54,9 @@ export default function App() {
   const [projectForm, setProjectForm] = useState({ name: "", description: "", isPublic: false });
   const [editingName, setEditingName] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
-  const [aiAutoSelectEnabled, setAiAutoSelectEnabledState] = useState(true);
+  const [aiProvider, setAiProviderState] = useState<AiProvider>("windowAi");
+  const [windowAiAvailable, setWindowAiAvailable] = useState(false);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [openRouterEnabled, setOpenRouterEnabledState] = useState(false);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
   const [openRouterModel, setOpenRouterModelState] = useState("deepseek/deepseek-chat");
   const [titlePrefix, setTitlePrefixState] = useState("");
@@ -69,11 +68,10 @@ export default function App() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def, aiEnabled, orEnabled, orKey, orModel, prefix, bodyTpl] = await Promise.all([
+      const [all, def, provider, orKey, orModel, prefix, bodyTpl] = await Promise.all([
         getProjects(),
         getDefaultProject(),
-        getAiAutoSelectEnabled(),
-        getOpenRouterEnabled(),
+        getAiProvider(),
         getOpenRouterApiKey(),
         getOpenRouterModel(),
         getTitlePrefix(),
@@ -83,8 +81,8 @@ export default function App() {
       if (def) {
         setDefaultProjectState(def);
       }
-      setAiAutoSelectEnabledState(aiEnabled);
-      setOpenRouterEnabledState(orEnabled);
+      setAiProviderState(provider);
+      setWindowAiAvailable(isWindowAiAvailable());
       setOpenRouterApiKeyState(orKey);
       setOpenRouterModelState(orModel);
       setTitlePrefixState(prefix);
@@ -97,6 +95,10 @@ export default function App() {
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    setWindowAiAvailable(isWindowAiAvailable());
+  }, []);
 
   const generate = useCallback(
     async (rawUrl: string) => {
@@ -113,7 +115,7 @@ export default function App() {
         const finalTitle = `${titlePrefix}${rawTitle}`;
         let project = defaultProject || DEFAULT_PROJECT;
         let aiResult: string | null = null;
-        if (openRouterEnabled && openRouterApiKey.trim()) {
+        if (aiProvider === "deepSeek" && openRouterApiKey.trim()) {
           const orProject = await selectProjectWithOpenRouter(
             projects,
             rawTitle,
@@ -123,14 +125,8 @@ export default function App() {
           if (orProject) {
             project = orProject;
             aiResult = orProject;
-          } else if (aiAutoSelectEnabled) {
-            const aiProject = await selectProjectWithAi(projects, rawTitle);
-            if (aiProject) {
-              project = aiProject;
-              aiResult = aiProject;
-            }
           }
-        } else if (aiAutoSelectEnabled) {
+        } else if (aiProvider === "windowAi") {
           const aiProject = await selectProjectWithAi(projects, rawTitle);
           if (aiProject) {
             project = aiProject;
@@ -167,9 +163,8 @@ export default function App() {
     },
     [
       defaultProject,
-      aiAutoSelectEnabled,
+      aiProvider,
       projects,
-      openRouterEnabled,
       openRouterApiKey,
       openRouterModel,
       titlePrefix,
@@ -334,19 +329,10 @@ export default function App() {
     }
   };
 
-  const handleAiToggle = async (enabled: boolean) => {
+  const handleAiProviderChange = async (provider: AiProvider) => {
     try {
-      await setAiAutoSelectEnabled(enabled);
-      setAiAutoSelectEnabledState(enabled);
-    } catch (err) {
-      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
-    }
-  };
-
-  const handleOpenRouterToggle = async (enabled: boolean) => {
-    try {
-      await setOpenRouterEnabled(enabled);
-      setOpenRouterEnabledState(enabled);
+      await setAiProvider(provider);
+      setAiProviderState(provider);
     } catch (err) {
       setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
     }
@@ -672,34 +658,28 @@ export default function App() {
 
               <div className="share-ai-settings">
                 <h3>AIによる自動選択</h3>
-                <label className="share-project-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={aiAutoSelectEnabled}
-                    onChange={(e) => void handleAiToggle(e.target.checked)}
-                  />
-                  有効にする（window.ai / Gemini Nanoが利用可能な場合）
-                </label>
-                <p className="share-settings-description" style={{ marginTop: "8px" }}>
-                  有効の場合、プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。無効またはAIが利用できない場合はデフォルトプロジェクトが使用されます。
-                </p>
-              </div>
-
-              <div className="share-ai-settings">
-                <h3>OpenRouterによる自動選択</h3>
-                <label className="share-project-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={openRouterEnabled}
-                    onChange={(e) => void handleOpenRouterToggle(e.target.checked)}
-                  />
-                  有効にする（window.aiより優先）
-                </label>
-                <p className="share-settings-description" style={{ marginTop: "8px" }}>
-                  OpenRouter経由で DeepSeek V4 Flash 0731
-                  等のモデルで自動選択します。デフォルト無効、有効時はwindow.aiより優先されます。APIキーはIndexedDBに保存されます。
-                </p>
-                {openRouterEnabled && (
+                <div className="share-project-field">
+                  <label htmlFor="ai-provider">プロジェクト自動選択</label>
+                  <select
+                    id="ai-provider"
+                    value={aiProvider === "windowAi" && !windowAiAvailable ? "none" : aiProvider}
+                    onChange={(e) => void handleAiProviderChange(e.target.value as AiProvider)}
+                    className="share-input share-select"
+                  >
+                    <option value="none">自動選択しない</option>
+                    {windowAiAvailable && <option value="windowAi">window.ai</option>}
+                    <option value="deepSeek">DeepSeek</option>
+                  </select>
+                  {!windowAiAvailable && (
+                    <p className="share-error" style={{ marginTop: "8px" }} role="alert">
+                      window.aiはこの環境で利用できません
+                    </p>
+                  )}
+                  <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                    プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。AIで選択できなかった場合はデフォルトプロジェクトが使用されます。
+                  </p>
+                </div>
+                {aiProvider === "deepSeek" && (
                   <>
                     <div className="share-project-field">
                       <label htmlFor="openrouter-key">APIキー</label>
@@ -723,6 +703,10 @@ export default function App() {
                         className="share-input"
                       />
                     </div>
+                    <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                      OpenRouter経由で DeepSeek
+                      等のモデルで自動選択します。APIキーはIndexedDBに保存されます。
+                    </p>
                   </>
                 )}
               </div>

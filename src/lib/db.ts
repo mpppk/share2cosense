@@ -122,6 +122,44 @@ export async function setDefaultProject(name: string): Promise<void> {
   await db.put("settings", { key: "defaultProject", value: name });
 }
 
+export type AiProvider = "none" | "windowAi" | "deepSeek";
+
+function isValidAiProvider(value: string): value is AiProvider {
+  return value === "none" || value === "windowAi" || value === "deepSeek";
+}
+
+export async function getAiProvider(): Promise<AiProvider> {
+  const db = await getDB();
+  const record = await db.get("settings", "aiProvider");
+  if (record && isValidAiProvider(record.value)) {
+    return record.value;
+  }
+  const openRouterRecord = await db.get("settings", "openRouterEnabled");
+  if (openRouterRecord?.value === "true") {
+    return "deepSeek";
+  }
+  const aiRecord = await db.get("settings", "aiAutoSelectEnabled");
+  if (aiRecord) {
+    return aiRecord.value === "true" ? "windowAi" : "none";
+  }
+  return "windowAi";
+}
+
+export async function setAiProvider(provider: AiProvider): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "aiProvider", value: provider });
+  if (provider === "deepSeek") {
+    await db.put("settings", { key: "openRouterEnabled", value: "true" });
+    await db.put("settings", { key: "aiAutoSelectEnabled", value: "false" });
+  } else if (provider === "windowAi") {
+    await db.put("settings", { key: "openRouterEnabled", value: "false" });
+    await db.put("settings", { key: "aiAutoSelectEnabled", value: "true" });
+  } else {
+    await db.put("settings", { key: "openRouterEnabled", value: "false" });
+    await db.put("settings", { key: "aiAutoSelectEnabled", value: "false" });
+  }
+}
+
 export async function getAiAutoSelectEnabled(): Promise<boolean> {
   const db = await getDB();
   const record = await db.get("settings", "aiAutoSelectEnabled");
