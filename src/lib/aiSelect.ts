@@ -10,6 +10,11 @@ function getAi(): unknown {
   return null;
 }
 
+export function isWindowAiAvailable(): boolean {
+  const ai = getAi() as { languageModel?: { create?: unknown } } | null;
+  return !!ai?.languageModel?.create;
+}
+
 export async function selectProjectWithAi(
   projects: Project[],
   title: string,
