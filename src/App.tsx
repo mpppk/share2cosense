@@ -23,6 +23,7 @@ import {
   type Project,
 } from "./lib/db";
 import { selectProjectWithAi } from "./lib/aiSelect";
+import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitle } from "./lib/fetchTitle";
 import "./App.css";
@@ -61,6 +62,8 @@ export default function App() {
   const [openRouterModel, setOpenRouterModelState] = useState("deepseek/deepseek-chat");
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
+  const [pageExists, setPageExists] = useState<boolean | null>(null);
+  const [checkingExists, setCheckingExists] = useState(false);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -133,6 +136,17 @@ export default function App() {
         if (!body.trim()) {
           body = trimmed;
         }
+        const selectedProjectData = projects.find((p) => p.name === project);
+        let exists: boolean | null = null;
+        if (selectedProjectData?.isPublic) {
+          setCheckingExists(true);
+          try {
+            exists = await checkPageExists(project, finalTitle, true);
+          } finally {
+            setCheckingExists(false);
+          }
+        }
+        setPageExists(exists);
         const url = buildCosenseUrl(project, finalTitle, body);
         setTitle(finalTitle);
         setCosenseUrl(url);
@@ -176,6 +190,8 @@ export default function App() {
       setTitle(null);
       setCosenseUrl(null);
       setSelectedProject(null);
+      setPageExists(null);
+      setCheckingExists(false);
       setError(null);
       setCopied(false);
       const url = new URL(window.location.href);
@@ -193,6 +209,8 @@ export default function App() {
       setTitle(null);
       setCosenseUrl(null);
       setSelectedProject(null);
+      setPageExists(null);
+      setCheckingExists(false);
       const handler = setTimeout(() => {
         setError("http:// または https:// で始まるURLを入力してください");
       }, 400);
@@ -407,6 +425,13 @@ export default function App() {
                 >
                   Open in {selectedProject || defaultProject}
                 </a>
+                {checkingExists && <p className="share-loading">存在チェック中...</p>}
+                {pageExists && (
+                  <p className="share-warning" role="alert">
+                    ⚠️
+                    このタイトルのページは既に存在します。リンクを開くと既存ページに追記されます。
+                  </p>
+                )}
                 <details className="share-details">
                   <summary>詳細を表示</summary>
                   <dl className="share-result-list">

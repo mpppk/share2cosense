@@ -334,6 +334,23 @@
   }
 }
 
+.share-warning {
+  color: #92400e;
+  font-size: 13px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .share-warning {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.4);
+    color: #fcd34d;
+  }
+}
+
 .share-result {
   border: 1px solid var(--border);
   border-radius: 12px;
