@@ -668,15 +668,17 @@ export default function App() {
                   >
                     <option value="none">自動選択しない</option>
                     {windowAiAvailable && (
-                      <option value="windowAi">Chrome Built-in AI (Gemini Nano)</option>
+                      <option value="windowAi">ブラウザ内蔵AI (LanguageModel)</option>
                     )}
                     <option value="deepSeek">DeepSeek</option>
                   </select>
                   {!windowAiAvailable && (
                     <p className="share-error" style={{ marginTop: "8px" }} role="alert">
-                      Chrome Built-in AI (LanguageModel / 旧 window.ai)
+                      ブラウザ内蔵AI (LanguageModel / 旧 window.ai)
                       はこの環境で利用できません。Chrome 138以降では window.ai は LanguageModel
-                      に置き換わりました。利用するには Chrome の
+                      に置き換わりました。モデルはブラウザにより異なります（Chrome: Gemini
+                      Nano、Edge: Phi系など）。利用するにはブラウザの Prompt API
+                      を有効化しモデルをダウンロードしてください。Chromeの場合は
                       chrome://flags/#prompt-api-for-gemini-nano と
                       chrome://flags/#optimization-guide-on-device-model を有効化し、
                       chrome://components でモデルをダウンロードしてください。
