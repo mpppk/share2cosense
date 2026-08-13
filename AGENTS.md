@@ -18,3 +18,15 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
 <!--VITE PLUS END-->
+
+## Development Workflow - Git Worktree
+
+PRごとの開発は git worktree を使用して行う。
+
+- worktree の base path: `/Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree`
+- 新しい PR 用 worktree の作成例:
+  ```bash
+  git worktree add /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name> -b <branch-name>
+  ```
+- worktree 一覧の確認: `git worktree list`
+- 作業完了後の削除: `git worktree remove /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name>`
