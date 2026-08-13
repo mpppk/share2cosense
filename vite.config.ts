@@ -7,7 +7,9 @@ export default defineConfig({
   staged: {
     "*": "vp check --fix",
   },
-  fmt: {},
+  fmt: {
+    ignorePatterns: ["dist/**", ".vercel/**"],
+  },
   lint: {
     plugins: ["react", "typescript", "oxc"],
     rules: {

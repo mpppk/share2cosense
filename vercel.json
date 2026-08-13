@@ -1,6 +1,6 @@
 {
   "framework": "vite",
-  "buildCommand": "vp check && vp build",
+  "buildCommand": "vp build",
   "outputDirectory": "dist",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
