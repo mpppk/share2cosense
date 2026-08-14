@@ -755,9 +755,7 @@ export default function App() {
             <section className="share-usage">
               <h2>使い方</h2>
               <p className="share-usage-description">
-                共有されたURLのタイトルを{" "}
-                <code>https://fetch.nibo.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
-                で取得し、Cosenseページ作成リンクを生成するPWAです。
+                共有されたURLのタイトルを取得し、Cosenseページ作成リンクを生成するPWAです。
                 <br />
                 生成されたリンクを開くと{" "}
                 <code>
@@ -809,13 +807,6 @@ export default function App() {
                   で共有を受け取ります。 優先順位は <code>url</code> ＞ <code>text</code> 内URL ＞{" "}
                   <code>title</code> です。PWAの <code>manifest share_target</code> は{" "}
                   <code>action: &quot;/&quot; method: GET</code> で設定済みです。
-                </p>
-              </details>
-              <details>
-                <summary>タイトル取得の仕様</summary>
-                <p>
-                  <code>https://fetch.nibo.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
-                  で取得します。失敗時は共有元URL自体をタイトルとして使用します。取得したタイトルには設定の接頭辞が付与されます。
                 </p>
               </details>
             </section>
