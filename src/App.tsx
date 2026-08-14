@@ -25,7 +25,8 @@ import { isWindowAiAvailable, selectProjectWithAi } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitleSource } from "./lib/fetchTitle";
-import { X_TITLE_MAX_LENGTH } from "./lib/xPost";
+import { generateXPostTitle } from "./lib/generateTitle";
+import { X_TITLE_MAX_LENGTH, isXPostUrl } from "./lib/xPost";
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
@@ -113,7 +114,20 @@ export default function App() {
       setError(null);
       setCopied(false);
       try {
-        const { title: rawTitle, description } = await fetchTitleSource(trimmed);
+        const { title: fetchedTitle, description } = await fetchTitleSource(trimmed);
+        // XのポストはAI設定時のみ本文からタイトルを生成し、失敗時は先頭N文字のまま
+        let rawTitle = fetchedTitle;
+        if (isXPostUrl(trimmed) && description) {
+          const generated = await generateXPostTitle({
+            text: description,
+            aiProvider,
+            openRouterApiKey,
+            openRouterModel,
+          });
+          if (generated) {
+            rawTitle = generated;
+          }
+        }
         const finalTitle = `${titlePrefix}${rawTitle}`;
         let body = bodyTemplate.replaceAll("{{url}}", trimmed).replaceAll("{{title}}", rawTitle);
         body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
@@ -804,9 +818,10 @@ export default function App() {
                 </p>
                 <p>
                   Xのポストを共有した場合、タイトルには <code>og:title</code>（
-                  <code>{"{ユーザ名} on X"}</code>）ではなくポスト本文の先頭
-                  {X_TITLE_MAX_LENGTH}
-                  文字を使用します。本文が長い場合は末尾が省略されるため、全文は{" "}
+                  <code>{"{ユーザ名} on X"}</code>）ではなくポスト本文を使用します。
+                  AI（設定の「プロジェクト自動選択」で選んだもの）が有効なときは本文からタイトルを生成し、
+                  AIを使わない設定や生成に失敗した場合は本文の先頭
+                  {X_TITLE_MAX_LENGTH}文字を使用します。いずれの場合も全文は{" "}
                   <code>{"{{description}}"}</code> で本文に含められます。
                 </p>
               </details>
@@ -861,6 +876,10 @@ export default function App() {
                   )}
                   <p className="share-settings-description" style={{ marginTop: "8px" }}>
                     プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。AIで選択できなかった場合はデフォルトプロジェクトが使用されます。
+                  </p>
+                  <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                    ここでAIを選ぶと、Xのポストを共有したときに本文からタイトルも生成します。「自動選択しない」の場合や生成に失敗した場合は、本文の先頭
+                    {X_TITLE_MAX_LENGTH}文字がタイトルになります。
                   </p>
                 </div>
                 {aiProvider === "deepSeek" && (

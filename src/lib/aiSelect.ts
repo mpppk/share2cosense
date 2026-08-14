@@ -115,9 +115,14 @@ async function createSession(
   return await api.create!();
 }
 
-export async function selectProjectWithAi(
-  projects: Project[],
-  title: string,
+/**
+ * Run a single prompt against the browser's on-device Prompt API.
+ * Returns null when the API is unavailable, times out, or errors.
+ */
+export async function promptBrowserAi(
+  systemPrompt: string,
+  prompt: string,
+  timeoutMs: number,
 ): Promise<string | null> {
   const api = getPromptApi();
 
@@ -130,16 +135,38 @@ export async function selectProjectWithAi(
       return null;
     }
 
-    const session = await createSession(
-      api,
-      "あなたはCosenseプロジェクト選択AIです。与えられたプロジェクト一覧と記事タイトルから最適なプロジェクトを1つ選びます。",
-    );
+    const session = await createSession(api, systemPrompt);
 
-    const projectList = projects
-      .map((p) => `- name: ${p.name}${p.description ? `, description: ${p.description}` : ""}`)
-      .join("\n");
+    try {
+      return await Promise.race<string>([
+        session.prompt(prompt),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error("AI timeout")), timeoutMs),
+        ),
+      ]);
+    } finally {
+      if (session.destroy) {
+        try {
+          session.destroy();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+}
 
-    const prompt = `プロジェクト一覧:
+export async function selectProjectWithAi(
+  projects: Project[],
+  title: string,
+): Promise<string | null> {
+  const projectList = projects
+    .map((p) => `- name: ${p.name}${p.description ? `, description: ${p.description}` : ""}`)
+    .join("\n");
+
+  const prompt = `プロジェクト一覧:
 ${projectList}
 
 記事タイトル: "${title}"
@@ -147,19 +174,17 @@ ${projectList}
 descriptionが空のプロジェクトはnameだけで判断してください。
 最適なprojectのnameをJSON {"projectName": "..."} で1つだけ返してください。日本語で考えてください。`;
 
-    const raw = await Promise.race<string>([
-      session.prompt(prompt),
-      new Promise<string>((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 3000)),
-    ]);
+  const raw = await promptBrowserAi(
+    "あなたはCosenseプロジェクト選択AIです。与えられたプロジェクト一覧と記事タイトルから最適なプロジェクトを1つ選びます。",
+    prompt,
+    3000,
+  );
 
-    if (session.destroy) {
-      try {
-        session.destroy();
-      } catch {
-        // ignore
-      }
-    }
+  if (!raw) {
+    return null;
+  }
 
+  try {
     const match = raw.match(/\{[^}]*projectName[^}]*\}/);
     const jsonStr = match ? match[0] : raw;
     const parsed = JSON.parse(jsonStr) as { projectName?: string };
