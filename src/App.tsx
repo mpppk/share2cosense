@@ -755,29 +755,53 @@ export default function App() {
             <section className="share-usage">
               <h2>使い方</h2>
               <p className="share-usage-description">
-                Web Share Targetで共有されたURLのタイトルを <code>fetch.nibo.sh?as=title</code>{" "}
+                共有されたURLのタイトルを{" "}
+                <code>https://fetch.nibo.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
                 で取得し、Cosenseページ作成リンクを生成するPWAです。
                 <br />
                 生成されたリンクを開くと{" "}
                 <code>
                   https://scrapbox.io/{defaultProject || projects[0]?.name || "(未設定)"}
-                  /&lt;title&gt;?body=&lt;url&gt;
+                  /&lt;title&gt;?body=&lt;body&gt;
                 </code>{" "}
-                で新規ページが作成されます。
+                で新規ページが作成されます（<code>&lt;body&gt;</code>{" "}
+                は設定の本文テンプレートから生成、既存ページがある場合は追記）。
               </p>
               <p className="share-project">
                 作成先プロジェクト: <code>{defaultProject || projects[0]?.name || "(未設定)"}</code>
                 {projects.length === 0
                   ? "（設定からプロジェクトを追加してください）"
-                  : "（AIが自動選択、セレクトボックスで手動変更可能）"}
+                  : "（AIがタイトルから自動選択、ドロップダウンで手動変更可能）"}
               </p>
               <ol className="share-usage-steps">
                 <li>
-                  スマホの「共有」から share2cosense を選択（PWAをインストールすると共有先に表示）
+                  PWAをインストールするとOSの共有先に表示されます。スマホ等の「共有」から
+                  share2cosense
+                  を選択すると、URLを自動で読み取りタイトルを取得してリンクを生成します
                 </li>
-                <li>または「リンク生成」画面の入力欄にURLを貼り付けて「リンク生成」</li>
-                <li>生成されたリンクをコピーまたは「Cosenseで開く」でページ作成</li>
+                <li>
+                  またはトップの「共有元URL」欄に <code>https://...</code>{" "}
+                  を貼り付けます。タイトル欄が表示されるので、必要に応じて編集や右側の更新ボタンで再取得ができます
+                </li>
+                <li>
+                  作成先プロジェクトはAI（設定で選択）の提案またはデフォルトプロジェクトが自動選択されます。ドロップダウンで手動変更できます
+                  （<code>public</code> の場合は既存ページの存在チェックが表示されます）
+                </li>
+                <li>
+                  「Open in {defaultProject || projects[0]?.name || "プロジェクト"}
+                  」ボタンでCosenseを開いてページを作成します。リンクは「詳細を表示」からコピーもできます
+                </li>
               </ol>
+              <details>
+                <summary>タイトル・本文のカスタマイズ</summary>
+                <p>
+                  設定の「タイトル接頭辞」でタイトルの先頭に固定文字列を付与できます。「本文テンプレート」では{" "}
+                  <code>{"{{url}}"}</code>（共有元URL）、<code>{"{{title}}"}</code>
+                  （取得したタイトル）、<code>{"{{date}}"}</code>
+                  （YYYY-MM-DD）を使って本文をカスタマイズできます。初期値は{" "}
+                  <code>{"{{url}}"}</code> です。
+                </p>
+              </details>
               <details>
                 <summary>Share Targetの仕様（GET）</summary>
                 <p>
@@ -791,7 +815,7 @@ export default function App() {
                 <summary>タイトル取得の仕様</summary>
                 <p>
                   <code>https://fetch.nibo.sh/&lt;host&gt;&lt;path&gt;?as=title</code>{" "}
-                  で取得します。失敗時は共有元URL自体をタイトルとして使用します。
+                  で取得します。失敗時は共有元URL自体をタイトルとして使用します。取得したタイトルには設定の接頭辞が付与されます。
                 </p>
               </details>
             </section>
