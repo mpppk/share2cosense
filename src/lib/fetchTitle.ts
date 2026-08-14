@@ -1,25 +1,47 @@
+import { fetchPageMeta, fetchPlainTitle } from "./pageMeta";
+import { buildXPostTitle, extractXPostText, isXPostUrl } from "./xPost";
+
+export type TitleSource = {
+  /**
+   * Title to use as-is. For X posts this is the first N characters of the post
+   * body; for other pages it is og:title (falling back to <title>).
+   * Falls back to the raw URL when nothing could be fetched.
+   */
+  title: string;
+  /**
+   * Page description — og:description, or the post body for X posts.
+   * Empty when unavailable.
+   *
+   * Kept separate from `title` so a later step can generate a title from the
+   * full text (e.g. via OpenRouter) instead of using the truncated body.
+   */
+  description: string;
+};
+
 /**
- * Fetch page title via fetch-proxy (fetch.nibo.sh?as=title).
- * Falls back to raw URL if fetch fails or title is empty.
+ * Fetch the title and description for a URL via fetch-proxy (fetch.nibo.sh?as=meta).
+ *
+ * X posts get special handling: X puts the author in og:title ("jack (@jack) on X")
+ * and the post body in og:description, so the title is built from the body instead.
+ *
+ * Falls back to ?as=title, then to the raw URL, so an older proxy deployment
+ * without as=meta still works.
  */
-export async function fetchTitle(rawUrl: string): Promise<string> {
-  try {
-    const url = new URL(rawUrl);
-    const hostAndPath = `${url.host}${url.pathname}${url.search}`;
-    const separator = url.search ? "&" : "?";
-    const proxyUrl = `https://fetch.nibo.sh/${hostAndPath}${separator}as=title`;
+export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
+  const meta = await fetchPageMeta(rawUrl);
 
-    const res = await fetch(proxyUrl, {
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!res.ok) {
-      return rawUrl;
+  if (meta) {
+    if (isXPostUrl(rawUrl)) {
+      const postText = extractXPostText(meta);
+      const xTitle = buildXPostTitle(meta);
+      if (xTitle) {
+        return { title: xTitle, description: postText };
+      }
     }
-
-    const text = (await res.text()).trim();
-    return text || rawUrl;
-  } catch {
-    return rawUrl;
+    const description = meta.ogDescription || meta.description;
+    return { title: meta.ogTitle || meta.title || rawUrl, description };
   }
+
+  const plainTitle = await fetchPlainTitle(rawUrl);
+  return { title: plainTitle ?? rawUrl, description: "" };
 }
