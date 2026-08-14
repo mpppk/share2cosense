@@ -24,7 +24,8 @@ import {
 import { isWindowAiAvailable, selectProjectWithAi } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
-import { fetchTitle } from "./lib/fetchTitle";
+import { fetchTitleSource } from "./lib/fetchTitle";
+import { X_TITLE_MAX_LENGTH } from "./lib/xPost";
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
@@ -112,10 +113,11 @@ export default function App() {
       setError(null);
       setCopied(false);
       try {
-        const rawTitle = await fetchTitle(trimmed);
+        const { title: rawTitle, description } = await fetchTitleSource(trimmed);
         const finalTitle = `${titlePrefix}${rawTitle}`;
         let body = bodyTemplate.replaceAll("{{url}}", trimmed).replaceAll("{{title}}", rawTitle);
         body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
+        body = body.replaceAll("{{description}}", description);
         if (!body.trim()) {
           body = trimmed;
         }
@@ -796,8 +798,16 @@ export default function App() {
                   設定の「タイトル接頭辞」でタイトルの先頭に固定文字列を付与できます。「本文テンプレート」では{" "}
                   <code>{"{{url}}"}</code>（共有元URL）、<code>{"{{title}}"}</code>
                   （取得したタイトル）、<code>{"{{date}}"}</code>
-                  （YYYY-MM-DD）を使って本文をカスタマイズできます。初期値は{" "}
+                  （YYYY-MM-DD）、<code>{"{{description}}"}</code>
+                  （ページの説明。Xのポストでは本文全体）を使って本文をカスタマイズできます。初期値は{" "}
                   <code>{"{{url}}"}</code> です。
+                </p>
+                <p>
+                  Xのポストを共有した場合、タイトルには <code>og:title</code>（
+                  <code>{"{ユーザ名} on X"}</code>）ではなくポスト本文の先頭
+                  {X_TITLE_MAX_LENGTH}
+                  文字を使用します。本文が長い場合は末尾が省略されるため、全文は{" "}
+                  <code>{"{{description}}"}</code> で本文に含められます。
                 </p>
               </details>
               <details>
@@ -900,7 +910,8 @@ export default function App() {
                 </div>
                 <div className="share-project-field">
                   <label htmlFor="body-template">
-                    本文テンプレート（{"{{url}}"}, {"{{title}}"}, {"{{date}}"} が使用可能）
+                    本文テンプレート（{"{{url}}"}, {"{{title}}"}, {"{{date}}"}, {"{{description}}"}{" "}
+                    が使用可能）
                   </label>
                   <textarea
                     id="body-template"
@@ -916,7 +927,8 @@ export default function App() {
                     {bodyTemplate
                       .replaceAll("{{url}}", "https://example.com")
                       .replaceAll("{{title}}", "Example Title")
-                      .replaceAll("{{date}}", new Date().toISOString().slice(0, 10))}
+                      .replaceAll("{{date}}", new Date().toISOString().slice(0, 10))
+                      .replaceAll("{{description}}", "Example description")}
                   </span>
                 </div>
               </div>
