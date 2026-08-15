@@ -1,4 +1,10 @@
-import { fetchPageMeta, fetchPlainTitle } from "./pageMeta";
+import {
+  createLookupSignal,
+  fetchMarkdownTitle,
+  fetchPageMeta,
+  fetchPlainTitle,
+  hasNoTitle,
+} from "./pageMeta";
 import { buildXPostTitle, extractXPostText, isXPostUrl } from "./xPost";
 
 export type TitleSource = {
@@ -24,11 +30,21 @@ export type TitleSource = {
  * X posts get special handling: X puts the author in og:title ("jack (@jack) on X")
  * and the post body in og:description, so the title is built from the body instead.
  *
- * Falls back to ?as=title, then to the raw URL, so an older proxy deployment
- * without as=meta still works.
+ * Two fallbacks sit behind as=meta, for two different failures:
+ *
+ * - The request failed outright, or the proxy predates as=meta — retry with
+ *   ?as=title, which every deployment understands.
+ * - The request succeeded but the page carries no title in its head — ask for
+ *   ?as=md and take the title out of the converted article. That path runs the
+ *   proxy's own content extraction, so it can still find a heading in pages
+ *   whose head is empty.
+ *
+ * Every attempt shares one abort signal, so the fallbacks cannot stack timeouts.
+ * The raw URL is the last resort.
  */
 export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
-  const meta = await fetchPageMeta(rawUrl);
+  const signal = createLookupSignal();
+  const meta = await fetchPageMeta(rawUrl, signal);
 
   if (meta) {
     if (isXPostUrl(rawUrl)) {
@@ -39,9 +55,18 @@ export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
       }
     }
     const description = meta.ogDescription || meta.description;
-    return { title: meta.ogTitle || meta.title || rawUrl, description };
+    if (!hasNoTitle(meta)) {
+      return { title: meta.ogTitle || meta.title, description };
+    }
+    const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
+    return { title: markdownTitle ?? rawUrl, description };
   }
 
-  const plainTitle = await fetchPlainTitle(rawUrl);
-  return { title: plainTitle ?? rawUrl, description: "" };
+  const plainTitle = await fetchPlainTitle(rawUrl, signal);
+  if (plainTitle) {
+    return { title: plainTitle, description: "" };
+  }
+
+  const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
+  return { title: markdownTitle ?? rawUrl, description: "" };
 }
