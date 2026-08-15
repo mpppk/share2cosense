@@ -46,8 +46,7 @@ export function hasNoTitle(meta: PageMeta): boolean {
 
 /**
  * Fetch <title> and OGP metadata for a URL.
- * Returns null when the page cannot be fetched or the proxy does not support as=meta,
- * so callers can fall back to as=title.
+ * Returns null when the page cannot be fetched, so callers can fall back.
  *
  * A successful response whose keys are all empty is still returned as-is: the
  * endpoint worked, the page simply exposes no metadata, and the caller decides
@@ -80,30 +79,6 @@ export async function fetchPageMeta(
       ogImage: asString(data.ogImage),
       description: asString(data.description),
     };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Fetch the plain title via as=title. Used as a fallback when as=meta is unavailable.
- * Returns null when the page cannot be fetched or the title is empty.
- */
-export async function fetchPlainTitle(
-  rawUrl: string,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  try {
-    const res = await fetch(toProxyUrl(rawUrl, "title"), {
-      signal: signal ?? createLookupSignal(),
-    });
-
-    if (!res.ok) {
-      return null;
-    }
-
-    const text = (await res.text()).trim();
-    return text || null;
   } catch {
     return null;
   }

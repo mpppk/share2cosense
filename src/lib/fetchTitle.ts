@@ -1,10 +1,4 @@
-import {
-  createLookupSignal,
-  fetchMarkdownTitle,
-  fetchPageMeta,
-  fetchPlainTitle,
-  hasNoTitle,
-} from "./pageMeta";
+import { createLookupSignal, fetchMarkdownTitle, fetchPageMeta, hasNoTitle } from "./pageMeta";
 import { buildXPostTitle, extractXPostText, isXPostUrl } from "./xPost";
 
 export type TitleSource = {
@@ -30,16 +24,12 @@ export type TitleSource = {
  * X posts get special handling: X puts the author in og:title ("jack (@jack) on X")
  * and the post body in og:description, so the title is built from the body instead.
  *
- * Two fallbacks sit behind as=meta, for two different failures:
+ * ?as=md is the single fallback, covering both ways as=meta can come up short:
+ * the request failing outright, and a page that carries no title in its head at
+ * all. That path runs the proxy's own content extraction, so it can still find
+ * a heading where the head is empty.
  *
- * - The request failed outright, or the proxy predates as=meta — retry with
- *   ?as=title, which every deployment understands.
- * - The request succeeded but the page carries no title in its head — ask for
- *   ?as=md and take the title out of the converted article. That path runs the
- *   proxy's own content extraction, so it can still find a heading in pages
- *   whose head is empty.
- *
- * Every attempt shares one abort signal, so the fallbacks cannot stack timeouts.
+ * Both attempts share one abort signal, so the fallback cannot stack timeouts.
  * The raw URL is the last resort.
  */
 export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
@@ -60,11 +50,6 @@ export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
     }
     const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
     return { title: markdownTitle ?? rawUrl, description };
-  }
-
-  const plainTitle = await fetchPlainTitle(rawUrl, signal);
-  if (plainTitle) {
-    return { title: plainTitle, description: "" };
   }
 
   const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
