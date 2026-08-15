@@ -92,7 +92,7 @@ export async function generateXPostTitle(options: {
   const prompt = buildPrompt(source);
   let raw: string | null = null;
 
-  if (aiProvider === "deepSeek") {
+  if (aiProvider === "openRouter") {
     raw = await promptOpenRouter(
       SYSTEM_PROMPT,
       prompt,

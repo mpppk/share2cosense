@@ -110,21 +110,27 @@ export async function setDefaultProject(name: string): Promise<void> {
   await db.put("settings", { key: "defaultProject", value: name });
 }
 
-export type AiProvider = "none" | "windowAi" | "deepSeek";
+export type AiProvider = "none" | "windowAi" | "openRouter";
 
 function isValidAiProvider(value: string): value is AiProvider {
-  return value === "none" || value === "windowAi" || value === "deepSeek";
+  return value === "none" || value === "windowAi" || value === "openRouter";
 }
 
 export async function getAiProvider(): Promise<AiProvider> {
   const db = await getDB();
   const record = await db.get("settings", "aiProvider");
-  if (record && isValidAiProvider(record.value)) {
-    return record.value;
+  if (record) {
+    if (isValidAiProvider(record.value)) {
+      return record.value;
+    }
+    // backward compatibility: old value "deepSeek" was renamed to "openRouter"
+    if (record.value === "deepSeek") {
+      return "openRouter";
+    }
   }
   const openRouterRecord = await db.get("settings", "openRouterEnabled");
   if (openRouterRecord?.value === "true") {
-    return "deepSeek";
+    return "openRouter";
   }
   const aiRecord = await db.get("settings", "aiAutoSelectEnabled");
   if (aiRecord) {
@@ -136,7 +142,7 @@ export async function getAiProvider(): Promise<AiProvider> {
 export async function setAiProvider(provider: AiProvider): Promise<void> {
   const db = await getDB();
   await db.put("settings", { key: "aiProvider", value: provider });
-  if (provider === "deepSeek") {
+  if (provider === "openRouter") {
     await db.put("settings", { key: "openRouterEnabled", value: "true" });
     await db.put("settings", { key: "aiAutoSelectEnabled", value: "false" });
   } else if (provider === "windowAi") {
@@ -190,7 +196,14 @@ export async function setOpenRouterApiKey(apiKey: string): Promise<void> {
 export async function getOpenRouterModel(): Promise<string> {
   const db = await getDB();
   const record = await db.get("settings", "openRouterModel");
-  return record?.value ?? "deepseek/deepseek-chat";
+  if (record?.value) {
+    // backward compatibility: old default "deepseek/deepseek-chat" -> new default
+    if (record.value === "deepseek/deepseek-chat") {
+      return "google/gemini-3.7-flash";
+    }
+    return record.value;
+  }
+  return "google/gemini-3.7-flash";
 }
 
 export async function setOpenRouterModel(model: string): Promise<void> {

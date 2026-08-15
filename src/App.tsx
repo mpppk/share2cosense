@@ -62,7 +62,7 @@ export default function App() {
   const [windowAiAvailable, setWindowAiAvailable] = useState(false);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
-  const [openRouterModel, setOpenRouterModelState] = useState("deepseek/deepseek-chat");
+  const [openRouterModel, setOpenRouterModelState] = useState("google/gemini-3.7-flash");
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
   const [pageExists, setPageExists] = useState<boolean | null>(null);
@@ -147,7 +147,7 @@ export default function App() {
           setError("プロジェクトが登録されていません。設定から追加してください");
           return;
         }
-        if (aiProvider === "deepSeek" && openRouterApiKey.trim()) {
+        if (aiProvider === "openRouter" && openRouterApiKey.trim()) {
           const orProject = await selectProjectWithOpenRouter(
             projects,
             rawTitle,
@@ -867,7 +867,7 @@ export default function App() {
                     {windowAiAvailable && (
                       <option value="windowAi">ブラウザAI (LanguageModel)</option>
                     )}
-                    <option value="deepSeek">DeepSeek</option>
+                    <option value="openRouter">OpenRouter</option>
                   </select>
                   {!windowAiAvailable && (
                     <p className="share-error" style={{ marginTop: "8px" }} role="alert">
@@ -882,7 +882,7 @@ export default function App() {
                     {X_TITLE_MAX_LENGTH}文字がタイトルになります。
                   </p>
                 </div>
-                {aiProvider === "deepSeek" && (
+                {aiProvider === "openRouter" && (
                   <>
                     <div className="share-project-field">
                       <label htmlFor="openrouter-key">APIキー</label>
@@ -902,13 +902,12 @@ export default function App() {
                         type="text"
                         value={openRouterModel}
                         onChange={(e) => void handleOpenRouterModelChange(e.target.value)}
-                        placeholder="deepseek/deepseek-chat"
+                        placeholder="google/gemini-3.7-flash"
                         className="share-input"
                       />
                     </div>
                     <p className="share-settings-description" style={{ marginTop: "8px" }}>
-                      OpenRouter経由で DeepSeek
-                      等のモデルで自動選択します。APIキーはIndexedDBに保存されます。
+                      OpenRouter経由で選択したモデルで自動選択します。APIキーはIndexedDBに保存されます。
                     </p>
                   </>
                 )}
