@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { DEFAULT_PROJECT } from "./config";
 import { buildCosenseUrl, extractSharedUrl, stripCosenseBody } from "./lib/cosense";
 import {
@@ -1139,6 +1140,7 @@ export default function App() {
           </>
         )}
       </main>
+      <Analytics />
     </div>
   );
 }
