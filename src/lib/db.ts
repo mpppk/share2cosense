@@ -1,4 +1,5 @@
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import type { LinkOpenMode } from "./openExternal";
 
 export type Project = {
   name: string;
@@ -209,6 +210,24 @@ export async function getOpenRouterModel(): Promise<string> {
 export async function setOpenRouterModel(model: string): Promise<void> {
   const db = await getDB();
   await db.put("settings", { key: "openRouterModel", value: model });
+}
+
+function isValidLinkOpenMode(value: string): value is LinkOpenMode {
+  return value === "auto" || value === "share" || value === "newTab";
+}
+
+export async function getLinkOpenMode(): Promise<LinkOpenMode> {
+  const db = await getDB();
+  const record = await db.get("settings", "linkOpenMode");
+  if (record && isValidLinkOpenMode(record.value)) {
+    return record.value;
+  }
+  return "auto";
+}
+
+export async function setLinkOpenMode(mode: LinkOpenMode): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "linkOpenMode", value: mode });
 }
 
 export async function getTitlePrefix(): Promise<string> {

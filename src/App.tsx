@@ -8,6 +8,7 @@ import {
   getAiProvider,
   getBodyTemplate,
   getDefaultProject,
+  getLinkOpenMode,
   getOpenRouterApiKey,
   getOpenRouterModel,
   getProjects,
@@ -15,6 +16,7 @@ import {
   setAiProvider,
   setBodyTemplate,
   setDefaultProject,
+  setLinkOpenMode,
   setOpenRouterApiKey,
   setOpenRouterModel,
   setTitlePrefix,
@@ -22,6 +24,7 @@ import {
   type AiProvider,
   type Project,
 } from "./lib/db";
+import { openCosenseUrl, type LinkOpenMode } from "./lib/openExternal";
 import { isWindowAiAvailable, selectProjectWithAi } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
@@ -67,6 +70,7 @@ export default function App() {
   const [openRouterModel, setOpenRouterModelState] = useState("google/gemini-3.7-flash");
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
+  const [linkOpenMode, setLinkOpenModeState] = useState<LinkOpenMode>("auto");
   const [pageExists, setPageExists] = useState<boolean | null>(null);
   const [checkingExists, setCheckingExists] = useState(false);
   const [generatedBody, setGeneratedBody] = useState<string | null>(null);
@@ -75,7 +79,7 @@ export default function App() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def, provider, orKey, orModel, prefix, bodyTpl] = await Promise.all([
+      const [all, def, provider, orKey, orModel, prefix, bodyTpl, openMode] = await Promise.all([
         getProjects(),
         getDefaultProject(),
         getAiProvider(),
@@ -83,6 +87,7 @@ export default function App() {
         getOpenRouterModel(),
         getTitlePrefix(),
         getBodyTemplate(),
+        getLinkOpenMode(),
       ]);
       setProjects(all);
       setDefaultProjectState(def ?? "");
@@ -92,6 +97,7 @@ export default function App() {
       setOpenRouterModelState(orModel);
       setTitlePrefixState(prefix);
       setBodyTemplateState(bodyTpl);
+      setLinkOpenModeState(openMode);
     } finally {
       setProjectsLoading(false);
     }
@@ -431,6 +437,15 @@ export default function App() {
     }
   };
 
+  const handleLinkOpenModeChange = async (mode: LinkOpenMode) => {
+    setLinkOpenModeState(mode);
+    try {
+      await setLinkOpenMode(mode);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
   const handleBodyTemplateChange = async (template: string) => {
     setBodyTemplateState(template);
     try {
@@ -673,6 +688,13 @@ export default function App() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="share-button primary large"
+                    onClick={(e) => {
+                      // PWAとして起動している場合は、アプリ内ブラウザではなく
+                      // ブラウザ / Cosense PWA で開くようOSに委ねる
+                      if (openCosenseUrl(cosenseUrl, linkOpenMode)) {
+                        e.preventDefault();
+                      }
+                    }}
                   >
                     Open in {selectedProject || defaultProject || projects[0]?.name || ""}
                   </a>
@@ -830,6 +852,20 @@ export default function App() {
                 </li>
               </ol>
               <details>
+                <summary>Cosenseリンクの開き方</summary>
+                <p>
+                  share2cosenseをPWAとしてインストールしている場合、通常のリンクはアプリ内ブラウザで開かれ、Cosenseがshare2cosenseの中に表示されてしまいます。
+                  そのため「Open in
+                  ...」ボタンはPWAとして起動しているときだけリンクをOSに渡し、Cosense
+                  PWAがインストールされていればそちらで、なければ既定のブラウザで開きます。
+                  ブラウザのタブから使っているときは、これまで通り新しいタブで開きます。
+                </p>
+                <p>
+                  挙動は設定の「Cosenseリンクの開き方」で変更できます（<code>自動</code>/
+                  <code>共有シート</code>/<code>新しいタブ</code>）。
+                </p>
+              </details>
+              <details>
                 <summary>タイトル・本文のカスタマイズ</summary>
                 <p>
                   設定の「タイトル接頭辞」でタイトルの先頭に固定文字列を付与できます。「本文テンプレート」では{" "}
@@ -934,6 +970,27 @@ export default function App() {
                     </p>
                   </>
                 )}
+              </div>
+
+              <div className="share-ai-settings">
+                <h3>Cosenseリンクの開き方</h3>
+                <div className="share-project-field">
+                  <label htmlFor="link-open-mode">「Open in」ボタンの動作</label>
+                  <select
+                    id="link-open-mode"
+                    value={linkOpenMode}
+                    onChange={(e) => void handleLinkOpenModeChange(e.target.value as LinkOpenMode)}
+                    className="share-input share-select"
+                  >
+                    <option value="auto">自動（OSに任せる）</option>
+                    <option value="share">共有シートで開く先を選ぶ</option>
+                    <option value="newTab">新しいタブで開く</option>
+                  </select>
+                  <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                    「自動」はPWAとして起動しているときだけOSにリンクを渡し、Cosense
+                    PWA（未インストールならブラウザ）で開きます。share2cosenseのアプリ内ブラウザで開いてしまう場合は「共有シート」を、常に同じ挙動にしたい場合は「新しいタブ」を選んでください。
+                  </p>
+                </div>
               </div>
 
               <div className="share-ai-settings">
