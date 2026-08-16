@@ -1,4 +1,4 @@
-import { fetchPageMeta, fetchPlainTitle } from "./pageMeta";
+import { createLookupSignal, fetchMarkdownTitle, fetchPageMeta, hasNoTitle } from "./pageMeta";
 import { buildXPostTitle, extractXPostText, isXPostUrl } from "./xPost";
 
 export type TitleSource = {
@@ -24,11 +24,17 @@ export type TitleSource = {
  * X posts get special handling: X puts the author in og:title ("jack (@jack) on X")
  * and the post body in og:description, so the title is built from the body instead.
  *
- * Falls back to ?as=title, then to the raw URL, so an older proxy deployment
- * without as=meta still works.
+ * ?as=md is the single fallback, covering both ways as=meta can come up short:
+ * the request failing outright, and a page that carries no title in its head at
+ * all. That path runs the proxy's own content extraction, so it can still find
+ * a heading where the head is empty.
+ *
+ * Both attempts share one abort signal, so the fallback cannot stack timeouts.
+ * The raw URL is the last resort.
  */
 export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
-  const meta = await fetchPageMeta(rawUrl);
+  const signal = createLookupSignal();
+  const meta = await fetchPageMeta(rawUrl, signal);
 
   if (meta) {
     if (isXPostUrl(rawUrl)) {
@@ -39,9 +45,13 @@ export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
       }
     }
     const description = meta.ogDescription || meta.description;
-    return { title: meta.ogTitle || meta.title || rawUrl, description };
+    if (!hasNoTitle(meta)) {
+      return { title: meta.ogTitle || meta.title, description };
+    }
+    const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
+    return { title: markdownTitle ?? rawUrl, description };
   }
 
-  const plainTitle = await fetchPlainTitle(rawUrl);
-  return { title: plainTitle ?? rawUrl, description: "" };
+  const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
+  return { title: markdownTitle ?? rawUrl, description: "" };
 }

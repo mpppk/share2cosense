@@ -10,6 +10,15 @@ export function buildCosenseUrl(project: string, title: string, bodyUrl: string)
 }
 
 /**
+ * Drop the ?body= query from a URL built by buildCosenseUrl,
+ * leaving a plain page URL without a prefilled body.
+ */
+export function stripCosenseBody(url: string): string {
+  const queryIndex = url.indexOf("?");
+  return queryIndex === -1 ? url : url.slice(0, queryIndex);
+}
+
+/**
  * Extract shared URL from Share Target params.
  * Priority: url > URL in text > title if it looks like URL
  */
