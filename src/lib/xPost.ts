@@ -62,13 +62,19 @@ function toGraphemes(text: string): string[] {
   return Array.from(text);
 }
 
-/** Truncate to maxLength characters, appending an ellipsis when shortened. */
-export function truncateTitle(text: string, maxLength: number = X_TITLE_MAX_LENGTH): string {
+/** Truncate to maxLength characters (grapheme-aware, no ellipsis). */
+export function truncateText(text: string, maxLength: number): string {
   const graphemes = toGraphemes(text);
   if (graphemes.length <= maxLength) {
     return text;
   }
-  return `${graphemes.slice(0, maxLength).join("").trimEnd()}…`;
+  return graphemes.slice(0, maxLength).join("").trimEnd();
+}
+
+/** Truncate to maxLength characters, appending an ellipsis when shortened. */
+export function truncateTitle(text: string, maxLength: number = X_TITLE_MAX_LENGTH): string {
+  const truncated = truncateText(text, maxLength);
+  return truncated === text ? text : `${truncated}…`;
 }
 
 /**

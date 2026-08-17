@@ -1,3 +1,5 @@
+import { truncateText } from "./xPost";
+
 /**
  * Build Cosense page creation URL.
  * Cosense creates a page when navigating to /<project>/<encodedTitle>.
@@ -19,35 +21,53 @@ export function stripCosenseBody(url: string): string {
 }
 
 /**
- * Extract shared URL from Share Target params.
- * Priority: url > URL in text > title if it looks like URL
+ * Max length of the shared text embedded into the body.
+ * Percent-encoding inflates the URL ~3x for Japanese text, and Safari's URL
+ * limit is around 80,000 chars, so 8000 chars leaves enough headroom.
  */
-export function extractSharedUrl(search: string): string | null {
+export const SHARED_TEXT_MAX_LENGTH = 8000;
+
+export type SharedContent = {
+  url: string | null;
+  text: string | null;
+};
+
+/**
+ * Extract shared URL and text from Share Target params.
+ *
+ * URL priority: url > URL in text > title if it looks like URL.
+ * Text is the raw `text` param (may be null when only a URL was shared).
+ */
+export function extractSharedContent(search: string): SharedContent {
   const params = new URLSearchParams(search);
+  let url: string | null = null;
+
   const urlParam = params.get("url")?.trim();
   if (urlParam && isHttpUrl(urlParam)) {
-    return urlParam;
+    url = urlParam;
   }
 
   const textParam = params.get("text")?.trim();
-  if (textParam) {
+  if (textParam && !url) {
     const found = extractUrlFromText(textParam);
     if (found) {
-      return found;
+      url = found;
     }
   }
 
-  const titleParam = params.get("title")?.trim();
-  if (titleParam && isHttpUrl(titleParam)) {
-    return titleParam;
+  if (!url) {
+    const titleParam = params.get("title")?.trim();
+    if (titleParam && isHttpUrl(titleParam)) {
+      url = titleParam;
+    }
   }
 
   // text may contain URL without url param (some browsers)
-  if (textParam && isHttpUrl(textParam)) {
-    return textParam;
+  if (textParam && !url && isHttpUrl(textParam)) {
+    url = textParam;
   }
 
-  return null;
+  return { url, text: textParam ? truncateText(textParam, SHARED_TEXT_MAX_LENGTH) : null };
 }
 
 function isHttpUrl(value: string): boolean {
