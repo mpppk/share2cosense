@@ -390,6 +390,19 @@
     margin: 0;
     word-break: break-all;
   }
+
+  .share-text-preview {
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    max-height: 240px;
+    overflow-y: auto;
+  }
 }
 
 .share-title {

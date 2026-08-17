@@ -4,24 +4,25 @@ import { promptOpenRouter } from "./openRouterSelect";
 import { X_TITLE_MAX_LENGTH, truncateTitle } from "./xPost";
 
 /**
- * Generate a title from an X post body using the AI provider configured for
- * project selection. Returns null whenever generation is unavailable or fails,
- * so the caller keeps the leading-characters title.
+ * Generate a title from shared text (and optionally the shared URL) using the
+ * AI provider configured for project selection. Returns null whenever
+ * generation is unavailable or fails, so the caller keeps the
+ * leading-characters title.
  */
 
 const TIMEOUT_MS = 8000;
 
 const SYSTEM_PROMPT =
-  "あなたはSNS投稿のタイトル生成AIです。投稿本文から、内容が一目で分かる簡潔なタイトルを1つ作ります。";
+  "あなたは共有されたコンテンツのタイトル生成AIです。本文（と共有元URL）から、内容が一目で分かる簡潔なタイトルを1つ作ります。";
 
-function buildPrompt(text: string): string {
-  return `以下はX（旧Twitter）のポスト本文です。
-
+function buildPrompt(text: string, url: string | null): string {
+  return `以下は共有されたコンテンツです。
+${url ? `\n共有元URL: ${url}\n` : ""}
 """
 ${text}
 """
 
-この本文の内容を表すタイトルを1つ作ってください。
+このコンテンツの内容を表すタイトルを1つ作ってください。
 
 - ${X_TITLE_MAX_LENGTH}文字以内
 - 本文と同じ言語で書く
@@ -76,20 +77,21 @@ function parseTitle(raw: string): string | null {
   }
 }
 
-export async function generateXPostTitle(options: {
+export async function generateTitleFromText(options: {
   text: string;
+  url: string | null;
   aiProvider: AiProvider;
   openRouterApiKey: string;
   openRouterModel: string;
 }): Promise<string | null> {
-  const { text, aiProvider, openRouterApiKey, openRouterModel } = options;
+  const { text, url, aiProvider, openRouterApiKey, openRouterModel } = options;
 
   const source = text.trim();
   if (!source) {
     return null;
   }
 
-  const prompt = buildPrompt(source);
+  const prompt = buildPrompt(source, url);
   let raw: string | null = null;
 
   if (aiProvider === "openRouter") {
