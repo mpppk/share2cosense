@@ -382,7 +382,6 @@ export default function App() {
           setAiSuggestedProject(null);
           setPageExists(null);
           setCosenseUrl(null);
-          setError("プロジェクトが登録されていません。設定から追加してください");
           return;
         }
         if (aiProvider === "openRouter" && openRouterApiKey.trim()) {
