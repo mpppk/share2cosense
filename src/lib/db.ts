@@ -1,4 +1,5 @@
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import { DEFAULT_OPENROUTER_MODEL } from "../config";
 import type { LinkOpenMode } from "./openExternal";
 
 export type Project = {
@@ -200,11 +201,11 @@ export async function getOpenRouterModel(): Promise<string> {
   if (record?.value) {
     // backward compatibility: old default "deepseek/deepseek-chat" -> new default
     if (record.value === "deepseek/deepseek-chat") {
-      return "google/gemini-3.7-flash";
+      return DEFAULT_OPENROUTER_MODEL;
     }
     return record.value;
   }
-  return "google/gemini-3.7-flash";
+  return DEFAULT_OPENROUTER_MODEL;
 }
 
 export async function setOpenRouterModel(model: string): Promise<void> {

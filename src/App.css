@@ -956,6 +956,17 @@
   display: inline-flex;
 }
 
+.share-model-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+
+  .share-input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 .share-candidates-button {
   display: inline-flex;
   align-items: center;
