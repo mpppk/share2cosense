@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { DEFAULT_PROJECT } from "./config";
-import {
-  buildCosenseUrl,
-  extractSharedContent,
-  SHARED_TEXT_MAX_LENGTH,
-  stripCosenseBody,
-} from "./lib/cosense";
+import { buildCosenseUrl, extractSharedContent, stripCosenseBody } from "./lib/cosense";
 import {
   addProject,
   deleteProject,
@@ -36,7 +31,8 @@ import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitleSource } from "./lib/fetchTitle";
 import { generateTitleFromText } from "./lib/generateTitle";
-import { X_TITLE_MAX_LENGTH, isXPostUrl, truncateText, truncateTitle } from "./lib/xPost";
+import { SHARED_TEXT_MAX_LENGTH } from "./lib/cosense";
+import { X_TITLE_MAX_LENGTH, truncateText, truncateTitle } from "./lib/xPost";
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
@@ -84,6 +80,13 @@ export default function App() {
   const [aiSuggestedProject, setAiSuggestedProject] = useState<string | null>(null);
   const [lastFetchedUrl, setLastFetchedUrl] = useState<string | null>(null);
   const [lastFetchedText, setLastFetchedText] = useState<string | null>(null);
+  const [titleCandidates, setTitleCandidates] = useState<Array<{ label: string; value: string }>>(
+    [],
+  );
+  const [candidateAiLoading, setCandidateAiLoading] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(false);
+  const candidatesButtonRef = useRef<HTMLButtonElement>(null);
+  const candidatesPopoverRef = useRef<HTMLDivElement>(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -120,60 +123,134 @@ export default function App() {
   }, []);
 
   const generate = useCallback(
-    async (rawUrl: string, rawText: string) => {
+    async (rawUrl: string, rawText: string, rawSharedTitle?: string | null) => {
       const trimmedUrl = rawUrl.trim();
       const trimmedText = truncateText(rawText.trim(), SHARED_TEXT_MAX_LENGTH);
+      const sharedTitle = rawSharedTitle?.trim() ? truncateText(rawSharedTitle.trim(), 500) : "";
       const hasUrl = trimmedUrl !== "" && isValidHttpUrl(trimmedUrl);
       const hasText = trimmedText !== "";
-      if (!hasUrl && !hasText) {
+      const hasSharedTitle = sharedTitle !== "";
+      if (!hasUrl && !hasText && !hasSharedTitle) {
         return;
       }
 
       setLoading(true);
       setError(null);
       setCopied(false);
+      setTitleCandidates([]);
+      setCandidateAiLoading(false);
+      setShowCandidates(false);
       try {
         let fetchedTitle = "";
+        let titleTag = "";
+        let ogTitle = "";
         let description = "";
         if (hasUrl) {
-          const { title: fetched, description: desc } = await fetchTitleSource(trimmedUrl);
-          fetchedTitle = fetched;
-          description = desc;
+          const source = await fetchTitleSource(trimmedUrl);
+          fetchedTitle = source.title;
+          titleTag = source.titleTag;
+          ogTitle = source.ogTitle;
+          description = source.description;
         }
 
+        const shouldTryAiForCandidate =
+          hasText &&
+          aiProvider !== "none" &&
+          (aiProvider === "openRouter"
+            ? openRouterApiKey.trim() !== ""
+            : aiProvider === "windowAi"
+              ? windowAiAvailable
+              : false);
+
+        // Build candidates from fetch
+        const buildFetchCandidates = (): Array<{ label: string; value: string }> => {
+          const list: Array<{ label: string; value: string }> = [];
+          if (titleTag) list.push({ label: "<title>", value: titleTag });
+          if (ogTitle && ogTitle !== titleTag) list.push({ label: "og:title", value: ogTitle });
+          if (
+            fetchedTitle &&
+            fetchedTitle !== titleTag &&
+            fetchedTitle !== ogTitle &&
+            // for X posts, fetchedTitle is derived from description
+            !list.some((c) => c.value === fetchedTitle)
+          ) {
+            list.push({ label: "取得タイトル", value: fetchedTitle });
+          }
+          return list;
+        };
+
         let rawTitle: string;
-        if (hasText) {
-          // 共有テキストからタイトルを生成。AI有効時はURL文脈も参照し、
-          // 失敗時は先頭N文字のまま
-          rawTitle = truncateTitle(trimmedText);
-          if (aiProvider !== "none") {
-            const generated = await generateTitleFromText({
-              text: trimmedText,
-              url: hasUrl ? trimmedUrl : null,
-              aiProvider,
-              openRouterApiKey,
-              openRouterModel,
-            });
-            if (generated) {
-              rawTitle = generated;
+        let candidates: Array<{ label: string; value: string }> = [];
+        let aiCandidate: string | null = null;
+
+        if (hasSharedTitle) {
+          rawTitle = sharedTitle;
+          candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
+          setTitleCandidates(candidates);
+          if (shouldTryAiForCandidate) {
+            setCandidateAiLoading(true);
+            try {
+              const generated = await generateTitleFromText({
+                text: trimmedText,
+                url: hasUrl ? trimmedUrl : null,
+                aiProvider,
+                openRouterApiKey,
+                openRouterModel,
+              });
+              if (generated && generated !== rawTitle) {
+                aiCandidate = generated;
+                setTitleCandidates((prev) => {
+                  if (prev.some((c) => c.value === generated)) return prev;
+                  return [...prev, { label: "AI生成", value: generated }];
+                });
+              }
+            } finally {
+              setCandidateAiLoading(false);
             }
           }
+        } else if (hasText) {
+          // No shared title, text-driven (previous logic)
+          if (shouldTryAiForCandidate) {
+            setCandidateAiLoading(true);
+            try {
+              const generated = await generateTitleFromText({
+                text: trimmedText,
+                url: hasUrl ? trimmedUrl : null,
+                aiProvider,
+                openRouterApiKey,
+                openRouterModel,
+              });
+              if (generated) aiCandidate = generated;
+            } finally {
+              setCandidateAiLoading(false);
+            }
+          }
+          if (aiCandidate) {
+            rawTitle = aiCandidate;
+          } else {
+            rawTitle = truncateTitle(trimmedText);
+          }
+          const fetchCands = buildFetchCandidates().filter((c) => c.value !== rawTitle);
+          // Add AI candidate to list only if it's not the default
+          if (aiCandidate && aiCandidate !== rawTitle) {
+            // This branch won't happen because rawTitle==aiCandidate when AI succeeded
+            candidates = fetchCands.some((c) => c.value === aiCandidate)
+              ? fetchCands
+              : [...fetchCands, { label: "AI生成", value: aiCandidate }];
+          } else if (aiCandidate && aiCandidate === rawTitle) {
+            // AI is the default, don't duplicate
+            candidates = fetchCands;
+          } else {
+            candidates = fetchCands;
+            // If AI loading was true but failed, no AI candidate
+          }
+          setTitleCandidates(candidates);
         } else {
-          // URLのみの共有。XのポストはAI設定時のみ本文からタイトルを生成し、
-          // 失敗時は先頭N文字のまま
+          // URL only (or sharedTitle already handled)
           rawTitle = fetchedTitle;
-          if (isXPostUrl(trimmedUrl) && description && aiProvider !== "none") {
-            const generated = await generateTitleFromText({
-              text: description,
-              url: trimmedUrl,
-              aiProvider,
-              openRouterApiKey,
-              openRouterModel,
-            });
-            if (generated) {
-              rawTitle = generated;
-            }
-          }
+          // Xのポストは旧ロジックではAIが入っていたが、要件ではtextが無い時はAI候補なしなのでスキップ
+          candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
+          setTitleCandidates(candidates);
         }
         const finalTitle = `${titlePrefix}${rawTitle}`;
         let body = bodyTemplate
@@ -248,6 +325,7 @@ export default function App() {
       openRouterModel,
       titlePrefix,
       bodyTemplate,
+      windowAiAvailable,
     ],
   );
 
@@ -258,7 +336,7 @@ export default function App() {
       setView("settings");
     }
     const shared = extractSharedContent(window.location.search);
-    if (shared.url || shared.text) {
+    if (shared.url || shared.text || shared.title) {
       initialSharedRef.current = shared;
       if (shared.url) {
         setInputUrl(shared.url);
@@ -286,6 +364,9 @@ export default function App() {
       setCopied(false);
       setLastFetchedUrl(null);
       setLastFetchedText(null);
+      setTitleCandidates([]);
+      setCandidateAiLoading(false);
+      setShowCandidates(false);
       const url = new URL(window.location.href);
       const hadParam = ["url", "text", "title"].some((key) => url.searchParams.has(key));
       if (hadParam) {
@@ -340,8 +421,31 @@ export default function App() {
     if (inputText.trim() !== (shared.text ?? "")) return;
     if (loading || title !== null || cosenseUrl !== null) return;
     hasAutoGeneratedRef.current = true;
-    void generate(shared.url ?? "", shared.text ?? "");
+    void generate(shared.url ?? "", shared.text ?? "", shared.title ?? "");
   }, [projectsLoading, inputUrl, inputText, loading, title, cosenseUrl, generate]);
+
+  useEffect(() => {
+    if (!showCandidates) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        candidatesPopoverRef.current?.contains(target) ||
+        candidatesButtonRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowCandidates(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowCandidates(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showCandidates]);
 
   const handleViewChange = (next: View) => {
     setView(next);
@@ -621,6 +725,18 @@ export default function App() {
     (trimmedInputUrl !== "" && !isValidUrl) ||
     (trimmedInputUrl === (lastFetchedUrl ?? "") && trimmedInputText === (lastFetchedText ?? ""));
 
+  const handleCandidateSelect = useCallback(
+    (value: string) => {
+      const newTitle = `${titlePrefix}${value}`;
+      setShowCandidates(false);
+      void handleTitleChange(newTitle);
+    },
+    [titlePrefix, handleTitleChange],
+  );
+
+  const hasCandidates = titleCandidates.length > 0;
+  const isCandidatesButtonDisabled = loading || (!hasCandidates && !candidateAiLoading);
+
   return (
     <div className="share-root">
       <main className="share-container">
@@ -663,30 +779,88 @@ export default function App() {
                     <label htmlFor="title-input" className="share-label">
                       タイトル
                     </label>
-                    <button
-                      type="button"
-                      className="share-title-refresh"
-                      onClick={() => void generate(trimmedInputUrl, trimmedInputText)}
-                      disabled={isRefreshDisabled}
-                      title="タイトルを取得"
-                      aria-label="タイトルを取得"
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
+                    <div className="share-title-actions">
+                      <div className="share-candidates-wrapper">
+                        <button
+                          ref={candidatesButtonRef}
+                          type="button"
+                          className="share-candidates-button"
+                          onClick={() => setShowCandidates((v) => !v)}
+                          disabled={isCandidatesButtonDisabled}
+                          aria-expanded={showCandidates}
+                          aria-haspopup="menu"
+                          aria-label="他の候補を表示"
+                        >
+                          他の候補
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                        {showCandidates && (
+                          <div
+                            ref={candidatesPopoverRef}
+                            className="share-candidates-popover"
+                            role="menu"
+                          >
+                            {titleCandidates.length === 0 && !candidateAiLoading ? (
+                              <p className="share-candidates-empty">候補がありません</p>
+                            ) : (
+                              <>
+                                {titleCandidates.map((c) => (
+                                  <button
+                                    key={`${c.label}:${c.value}`}
+                                    type="button"
+                                    className="share-candidates-item"
+                                    role="menuitem"
+                                    onClick={() => handleCandidateSelect(c.value)}
+                                  >
+                                    <span className="share-candidates-label">{c.label}</span>
+                                    <span className="share-candidates-value">{c.value}</span>
+                                  </button>
+                                ))}
+                                {candidateAiLoading && (
+                                  <p className="share-candidates-loading">AI生成中...</p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="share-title-refresh"
+                        onClick={() => void generate(trimmedInputUrl, trimmedInputText)}
+                        disabled={isRefreshDisabled}
+                        title="タイトルを取得"
+                        aria-label="タイトルを取得"
                       >
-                        <polyline points="23 4 23 10 17 10" />
-                        <polyline points="1 20 1 14 7 14" />
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                      </svg>
-                    </button>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="23 4 23 10 17 10" />
+                          <polyline points="1 20 1 14 7 14" />
+                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <input
                     id="title-input"
