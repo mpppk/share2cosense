@@ -153,14 +153,15 @@ export default function App() {
           description = source.description;
         }
 
-        const shouldTryAiForCandidate =
-          hasText &&
+        const canUseAi =
           aiProvider !== "none" &&
           (aiProvider === "openRouter"
             ? openRouterApiKey.trim() !== ""
             : aiProvider === "windowAi"
               ? windowAiAvailable
               : false);
+        const shouldTryAiForText = hasText && canUseAi;
+        const shouldTryAiForDesc = !!description && canUseAi && description !== trimmedText;
 
         // Build candidates from fetch
         const buildFetchCandidates = (): Array<{ label: string; value: string }> => {
@@ -181,76 +182,156 @@ export default function App() {
 
         let rawTitle: string;
         let candidates: Array<{ label: string; value: string }> = [];
-        let aiCandidate: string | null = null;
+        let aiFromText: string | null = null;
+        let aiFromDesc: string | null = null;
+
+        const addAiCandidate = (label: string, value: string, skipRawValue?: string) => {
+          if (!value || value === skipRawValue) return;
+          setTitleCandidates((prev) => {
+            if (prev.some((c) => c.value === value)) return prev;
+            return [...prev, { label, value }];
+          });
+        };
 
         if (hasSharedTitle) {
           rawTitle = sharedTitle;
           candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
           setTitleCandidates(candidates);
-          if (shouldTryAiForCandidate) {
+          const tasks: Array<Promise<void>> = [];
+          if (shouldTryAiForText) {
+            tasks.push(
+              (async () => {
+                const generated = await generateTitleFromText({
+                  text: trimmedText,
+                  url: hasUrl ? trimmedUrl : null,
+                  aiProvider,
+                  openRouterApiKey,
+                  openRouterModel,
+                });
+                if (generated && generated !== rawTitle) {
+                  aiFromText = generated;
+                  addAiCandidate("AI生成（テキスト）", generated, rawTitle);
+                }
+              })(),
+            );
+          }
+          if (shouldTryAiForDesc) {
+            tasks.push(
+              (async () => {
+                const generated = await generateTitleFromText({
+                  text: description,
+                  url: hasUrl ? trimmedUrl : null,
+                  aiProvider,
+                  openRouterApiKey,
+                  openRouterModel,
+                });
+                if (generated && generated !== rawTitle) {
+                  aiFromDesc = generated;
+                  addAiCandidate("AI生成（説明）", generated, rawTitle);
+                }
+              })(),
+            );
+          }
+          if (tasks.length > 0) {
             setCandidateAiLoading(true);
             try {
-              const generated = await generateTitleFromText({
-                text: trimmedText,
-                url: hasUrl ? trimmedUrl : null,
-                aiProvider,
-                openRouterApiKey,
-                openRouterModel,
-              });
-              if (generated && generated !== rawTitle) {
-                aiCandidate = generated;
-                setTitleCandidates((prev) => {
-                  if (prev.some((c) => c.value === generated)) return prev;
-                  return [...prev, { label: "AI生成", value: generated }];
-                });
-              }
+              await Promise.all(tasks);
             } finally {
               setCandidateAiLoading(false);
             }
           }
         } else if (hasText) {
-          // No shared title, text-driven (previous logic)
-          if (shouldTryAiForCandidate) {
+          // No shared title, text-driven (previous logic) - generate both AIs in parallel
+          const tasks: Array<Promise<void>> = [];
+          if (shouldTryAiForText) {
+            tasks.push(
+              (async () => {
+                const generated = await generateTitleFromText({
+                  text: trimmedText,
+                  url: hasUrl ? trimmedUrl : null,
+                  aiProvider,
+                  openRouterApiKey,
+                  openRouterModel,
+                });
+                if (generated) aiFromText = generated;
+              })(),
+            );
+          }
+          if (shouldTryAiForDesc) {
+            tasks.push(
+              (async () => {
+                const generated = await generateTitleFromText({
+                  text: description,
+                  url: hasUrl ? trimmedUrl : null,
+                  aiProvider,
+                  openRouterApiKey,
+                  openRouterModel,
+                });
+                if (generated) aiFromDesc = generated;
+              })(),
+            );
+          }
+          if (tasks.length > 0) {
             setCandidateAiLoading(true);
             try {
-              const generated = await generateTitleFromText({
-                text: trimmedText,
-                url: hasUrl ? trimmedUrl : null,
-                aiProvider,
-                openRouterApiKey,
-                openRouterModel,
-              });
-              if (generated) aiCandidate = generated;
+              await Promise.all(tasks);
             } finally {
               setCandidateAiLoading(false);
             }
           }
-          if (aiCandidate) {
-            rawTitle = aiCandidate;
+          if (aiFromText) {
+            rawTitle = aiFromText;
           } else {
             rawTitle = truncateTitle(trimmedText);
           }
           const fetchCands = buildFetchCandidates().filter((c) => c.value !== rawTitle);
-          // Add AI candidate to list only if it's not the default
-          if (aiCandidate && aiCandidate !== rawTitle) {
-            // This branch won't happen because rawTitle==aiCandidate when AI succeeded
-            candidates = fetchCands.some((c) => c.value === aiCandidate)
-              ? fetchCands
-              : [...fetchCands, { label: "AI生成", value: aiCandidate }];
-          } else if (aiCandidate && aiCandidate === rawTitle) {
-            // AI is the default, don't duplicate
-            candidates = fetchCands;
-          } else {
-            candidates = fetchCands;
-            // If AI loading was true but failed, no AI candidate
+          candidates = [...fetchCands];
+          if (aiFromText && aiFromText !== rawTitle) {
+            if (!candidates.some((c) => c.value === aiFromText)) {
+              candidates.push({ label: "AI生成（テキスト）", value: aiFromText });
+            }
+          } else if (aiFromText && aiFromText === rawTitle) {
+            // default is AI from text, don't duplicate
+          }
+          if (
+            aiFromDesc &&
+            aiFromDesc !== rawTitle &&
+            !candidates.some((c) => c.value === aiFromDesc)
+          ) {
+            candidates.push({ label: "AI生成（説明）", value: aiFromDesc });
           }
           setTitleCandidates(candidates);
         } else {
-          // URL only (or sharedTitle already handled)
-          rawTitle = fetchedTitle;
-          // Xのポストは旧ロジックではAIが入っていたが、要件ではtextが無い時はAI候補なしなのでスキップ
-          candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
+          // URL only (or sharedTitle already handled) - try AI from description
+          if (shouldTryAiForDesc) {
+            setCandidateAiLoading(true);
+            try {
+              const generated = await generateTitleFromText({
+                text: description,
+                url: trimmedUrl,
+                aiProvider,
+                openRouterApiKey,
+                openRouterModel,
+              });
+              if (generated) aiFromDesc = generated;
+            } finally {
+              setCandidateAiLoading(false);
+            }
+          }
+          if (aiFromDesc) {
+            rawTitle = aiFromDesc;
+            candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
+            // AI from description is the default, don't duplicate
+          } else {
+            rawTitle = fetchedTitle;
+            candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
+            // Still add AI from description as candidate if it was generated but not default? handled above
+            // For URL only, aiFromDesc is the AI, already handled as default, so no extra
+          }
           setTitleCandidates(candidates);
+          // Also add AI from description as candidate when it is not the default? already handled
+          // For URL only, if AI succeeded it is default, otherwise no AI candidate
+          // If we want to show AI(desc) as candidate even when default is sharedTitle, that's handled in hasSharedTitle branch
         }
         const finalTitle = `${titlePrefix}${rawTitle}`;
         let body = bodyTemplate
