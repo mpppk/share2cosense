@@ -32,10 +32,22 @@ import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitleSource } from "./lib/fetchTitle";
 import { generateTitleFromText } from "./lib/generateTitle";
 import { SHARED_TEXT_MAX_LENGTH } from "./lib/cosense";
-import { X_TITLE_MAX_LENGTH, truncateText, truncateTitle } from "./lib/xPost";
+import { X_TITLE_MAX_LENGTH, isXPostUrl, truncateText, truncateTitle } from "./lib/xPost";
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
+
+function buildBody(template: string, url: string, text: string, rawTitle: string): string {
+  let body = template
+    .replaceAll("{{url}}", url)
+    .replaceAll("{{text}}", text)
+    .replaceAll("{{title}}", rawTitle);
+  body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
+  if (!body.trim()) {
+    body = text || url;
+  }
+  return body;
+}
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -87,6 +99,11 @@ export default function App() {
   const [showCandidates, setShowCandidates] = useState(false);
   const candidatesButtonRef = useRef<HTMLButtonElement>(null);
   const candidatesPopoverRef = useRef<HTMLDivElement>(null);
+  const [textCandidates, setTextCandidates] = useState<Array<{ label: string; value: string }>>([]);
+  const [showTextCandidates, setShowTextCandidates] = useState(false);
+  const textCandidatesButtonRef = useRef<HTMLButtonElement>(null);
+  const textCandidatesPopoverRef = useRef<HTMLDivElement>(null);
+  const lastRawTitleRef = useRef("");
 
   const loadProjects = useCallback(async () => {
     try {
@@ -140,6 +157,8 @@ export default function App() {
       setTitleCandidates([]);
       setCandidateAiLoading(false);
       setShowCandidates(false);
+      setTextCandidates([]);
+      setShowTextCandidates(false);
       try {
         let fetchedTitle = "";
         let titleTag = "";
@@ -334,15 +353,26 @@ export default function App() {
           // If we want to show AI(desc) as candidate even when default is sharedTitle, that's handled in hasSharedTitle branch
         }
         const finalTitle = `${titlePrefix}${rawTitle}`;
-        let body = bodyTemplate
-          .replaceAll("{{url}}", trimmedUrl)
-          .replaceAll("{{text}}", trimmedText)
-          .replaceAll("{{title}}", rawTitle);
-        body = body.replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
-        body = body.replaceAll("{{description}}", description);
-        if (!body.trim()) {
-          body = trimmedText || trimmedUrl;
+        // 本文テキスト: 共有テキストを優先し、なければ取得した説明（Xのポスト本文）を使う
+        const defaultText = hasText
+          ? trimmedText
+          : truncateText(description, SHARED_TEXT_MAX_LENGTH);
+        const textCands: Array<{ label: string; value: string }> = [];
+        if (hasText) {
+          textCands.push({ label: "共有テキスト", value: trimmedText });
         }
+        if (description && description !== trimmedText) {
+          textCands.push({
+            label: isXPostUrl(trimmedUrl) ? "Xポスト本文" : "ページの説明",
+            value: truncateText(description, SHARED_TEXT_MAX_LENGTH),
+          });
+        }
+        setTextCandidates(textCands.filter((c) => c.value !== defaultText));
+        if (!hasText && description) {
+          setInputText(defaultText);
+        }
+        lastRawTitleRef.current = rawTitle;
+        const body = buildBody(bodyTemplate, trimmedUrl, defaultText, rawTitle);
         let project = defaultProject || projects[0]?.name || "";
         let aiResult: string | null = null;
         if (projects.length === 0 || !project) {
@@ -448,6 +478,8 @@ export default function App() {
       setTitleCandidates([]);
       setCandidateAiLoading(false);
       setShowCandidates(false);
+      setTextCandidates([]);
+      setShowTextCandidates(false);
       const url = new URL(window.location.href);
       const hadParam = ["url", "text", "title"].some((key) => url.searchParams.has(key));
       if (hadParam) {
@@ -506,19 +538,25 @@ export default function App() {
   }, [projectsLoading, inputUrl, inputText, loading, title, cosenseUrl, generate]);
 
   useEffect(() => {
-    if (!showCandidates) return;
+    if (!showCandidates && !showTextCandidates) return;
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
         candidatesPopoverRef.current?.contains(target) ||
-        candidatesButtonRef.current?.contains(target)
+        candidatesButtonRef.current?.contains(target) ||
+        textCandidatesPopoverRef.current?.contains(target) ||
+        textCandidatesButtonRef.current?.contains(target)
       ) {
         return;
       }
       setShowCandidates(false);
+      setShowTextCandidates(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowCandidates(false);
+      if (e.key === "Escape") {
+        setShowCandidates(false);
+        setShowTextCandidates(false);
+      }
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -526,7 +564,7 @@ export default function App() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [showCandidates]);
+  }, [showCandidates, showTextCandidates]);
 
   const handleViewChange = (next: View) => {
     setView(next);
@@ -815,8 +853,41 @@ export default function App() {
     [titlePrefix, handleTitleChange],
   );
 
+  // 本文テキストが変わったときに本文とCosense URLを再構築する
+  const rebuildBodyFromText = useCallback(
+    (text: string) => {
+      if (!title || !generatedBody) return;
+      const effectiveProject = selectedProject || defaultProject || projects[0]?.name || "";
+      if (!effectiveProject) return;
+      const body = buildBody(bodyTemplate, lastFetchedUrl ?? "", text, lastRawTitleRef.current);
+      setGeneratedBody(body);
+      setCosenseUrl(buildCosenseUrl(effectiveProject, title, body));
+      setCopied(false);
+    },
+    [title, generatedBody, selectedProject, defaultProject, projects, bodyTemplate, lastFetchedUrl],
+  );
+
+  const handleTextCandidateSelect = useCallback(
+    (value: string) => {
+      setShowTextCandidates(false);
+      setInputText(value);
+      rebuildBodyFromText(value);
+    },
+    [rebuildBodyFromText],
+  );
+
+  const handleInputTextChange = useCallback(
+    (value: string) => {
+      setInputText(value);
+      rebuildBodyFromText(value);
+    },
+    [rebuildBodyFromText],
+  );
+
   const hasCandidates = titleCandidates.length > 0;
   const isCandidatesButtonDisabled = loading || (!hasCandidates && !candidateAiLoading);
+  const hasTextCandidates = textCandidates.length > 0;
+  const isTextCandidatesButtonDisabled = loading || !hasTextCandidates;
 
   return (
     <div className="share-root">
@@ -841,13 +912,68 @@ export default function App() {
                 />
               </div>
 
-              <label htmlFor="text-input" className="share-label">
-                共有テキスト
-              </label>
+              <div className="share-label-row">
+                <label htmlFor="text-input" className="share-label">
+                  本文テキスト
+                </label>
+                <div className="share-text-actions">
+                  <div className="share-candidates-wrapper">
+                    <button
+                      ref={textCandidatesButtonRef}
+                      type="button"
+                      className="share-candidates-button"
+                      onClick={() => setShowTextCandidates((v) => !v)}
+                      disabled={isTextCandidatesButtonDisabled}
+                      aria-expanded={showTextCandidates}
+                      aria-haspopup="menu"
+                      aria-label="他のテキスト候補を表示"
+                    >
+                      他の候補
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                    {showTextCandidates && (
+                      <div
+                        ref={textCandidatesPopoverRef}
+                        className="share-candidates-popover"
+                        role="menu"
+                      >
+                        {textCandidates.length === 0 ? (
+                          <p className="share-candidates-empty">候補がありません</p>
+                        ) : (
+                          textCandidates.map((c) => (
+                            <button
+                              key={`${c.label}:${c.value}`}
+                              type="button"
+                              className="share-candidates-item"
+                              role="menuitem"
+                              onClick={() => handleTextCandidateSelect(c.value)}
+                            >
+                              <span className="share-candidates-label">{c.label}</span>
+                              <span className="share-candidates-value">{c.value}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
               <textarea
                 id="text-input"
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => handleInputTextChange(e.target.value)}
                 className="share-input"
                 rows={3}
                 placeholder="共有するテキスト（任意、URLと併用可）"
@@ -1131,7 +1257,7 @@ export default function App() {
                       )}
                       {trimmedInputText && (
                         <div>
-                          <dt>共有テキスト</dt>
+                          <dt>本文テキスト</dt>
                           <dd className="share-text-preview">{trimmedInputText}</dd>
                         </div>
                       )}
@@ -1188,7 +1314,7 @@ export default function App() {
                 </li>
                 <li>
                   またはトップの「共有元URL」欄に <code>https://...</code>{" "}
-                  を貼り付けます。URLと併用して「共有テキスト」欄にテキストも入力できます。タイトル欄が表示されるので、必要に応じて編集や右側の更新ボタンで再取得ができます
+                  を貼り付けます。URLと併用して「本文テキスト」欄にテキストも入力できます。タイトル欄が表示されるので、必要に応じて編集や右側の更新ボタンで再取得ができます
                 </li>
                 <li>
                   作成先プロジェクトはAI（設定で選択）の提案またはデフォルトプロジェクトが自動選択されます。ドロップダウンで手動変更できます
@@ -1220,16 +1346,14 @@ export default function App() {
                 <p>
                   設定の「タイトル接頭辞」でタイトルの先頭に固定文字列を付与できます。「本文テンプレート」では{" "}
                   <code>{"{{url}}"}</code>（共有元URL）、<code>{"{{text}}"}</code>
-                  （共有テキスト）、<code>{"{{title}}"}</code>
+                  （本文テキスト）、<code>{"{{title}}"}</code>
                   （取得したタイトル）、<code>{"{{date}}"}</code>
-                  （YYYY-MM-DD）、<code>{"{{description}}"}</code>
-                  （ページの説明。Xのポストでは本文全体）を使って本文をカスタマイズできます。初期値は{" "}
+                  （YYYY-MM-DD）を使って本文をカスタマイズできます。初期値は{" "}
                   <code>{"{{url}}"}</code> です。URLが共有されていない場合は{" "}
                   <code>{"{{url}}"}</code> は空文字になります。
                 </p>
                 <p>
-                  共有テキスト（<code>{"{{text}}"}</code>
-                  ）がある場合、タイトルはテキストから生成します。
+                  本文テキスト欄には共有テキストが入り、URLだけを共有した場合はページの説明（Xのポストでは本文全体）が入ります。「他の候補」から共有テキストとページの説明を切り替えられます。タイトルは本文テキストから生成します。
                   AI（設定の「プロジェクト自動選択」で選んだもの）が有効なときはテキスト（URLが共有されている場合はそれも参照）からタイトルを生成し、
                   AIを使わない設定や生成に失敗した場合はテキストの先頭
                   {X_TITLE_MAX_LENGTH}文字を使用します。テキストは{SHARED_TEXT_MAX_LENGTH}
@@ -1241,7 +1365,7 @@ export default function App() {
                   AI（設定の「プロジェクト自動選択」で選んだもの）が有効なときは本文からタイトルを生成し、
                   AIを使わない設定や生成に失敗した場合は本文の先頭
                   {X_TITLE_MAX_LENGTH}文字を使用します。いずれの場合も全文は{" "}
-                  <code>{"{{description}}"}</code> で本文に含められます。
+                  <code>{"{{text}}"}</code> で本文に含められます。
                 </p>
               </details>
               <details>
@@ -1370,8 +1494,8 @@ export default function App() {
                 </div>
                 <div className="share-project-field">
                   <label htmlFor="body-template">
-                    本文テンプレート（{"{{url}}"}, {"{{text}}"}, {"{{title}}"}, {"{{date}}"},{" "}
-                    {"{{description}}"} が使用可能）
+                    本文テンプレート（{"{{url}}"}, {"{{text}}"}, {"{{title}}"}, {"{{date}}"}{" "}
+                    が使用可能）
                   </label>
                   <textarea
                     id="body-template"
@@ -1388,8 +1512,7 @@ export default function App() {
                       .replaceAll("{{url}}", "https://example.com")
                       .replaceAll("{{text}}", "Example text")
                       .replaceAll("{{title}}", "Example Title")
-                      .replaceAll("{{date}}", new Date().toISOString().slice(0, 10))
-                      .replaceAll("{{description}}", "Example description")}
+                      .replaceAll("{{date}}", new Date().toISOString().slice(0, 10))}
                   </span>
                 </div>
               </div>
