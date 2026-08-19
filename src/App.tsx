@@ -537,6 +537,20 @@ export default function App() {
     void generate(shared.url ?? "", shared.text ?? "", shared.title ?? "");
   }, [projectsLoading, inputUrl, inputText, loading, title, cosenseUrl, generate]);
 
+  // URLを手動で入力したタイミングでタイトル・本文の抽出を自動実行する
+  useEffect(() => {
+    if (projectsLoading) return;
+    const trimmedUrl = inputUrl.trim();
+    if (!trimmedUrl || !isValidHttpUrl(trimmedUrl)) return;
+    if (loading) return;
+    if (trimmedUrl === (lastFetchedUrl ?? "")) return;
+    const handler = setTimeout(() => {
+      if (loading) return;
+      void generate(trimmedUrl, inputText.trim());
+    }, 600);
+    return () => clearTimeout(handler);
+  }, [inputUrl, inputText, projectsLoading, loading, lastFetchedUrl, generate]);
+
   useEffect(() => {
     if (!showCandidates && !showTextCandidates) return;
     const onPointerDown = (e: MouseEvent) => {
