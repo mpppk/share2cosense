@@ -305,12 +305,13 @@ export default function App() {
           }
           const fetchCands = buildFetchCandidates().filter((c) => c.value !== rawTitle);
           candidates = [...fetchCands];
-          if (aiFromText && aiFromText !== rawTitle) {
+          // デフォルトタイトルも候補に含める（別の候補へ切り替えた後に戻せなくなるのを防ぐ）
+          if (aiFromText) {
             if (!candidates.some((c) => c.value === aiFromText)) {
               candidates.push({ label: "AI生成（テキスト）", value: aiFromText });
             }
-          } else if (aiFromText && aiFromText === rawTitle) {
-            // default is AI from text, don't duplicate
+          } else if (!candidates.some((c) => c.value === rawTitle)) {
+            candidates.push({ label: "テキスト冒頭", value: rawTitle });
           }
           if (
             aiFromDesc &&
@@ -340,7 +341,10 @@ export default function App() {
           if (aiFromDesc) {
             rawTitle = aiFromDesc;
             candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
-            // AI from description is the default, don't duplicate
+            // デフォルトタイトルも候補に含める（別の候補へ切り替えた後に戻せなくなるのを防ぐ）
+            if (!candidates.some((c) => c.value === aiFromDesc)) {
+              candidates.push({ label: "AI生成（説明）", value: aiFromDesc });
+            }
           } else {
             rawTitle = fetchedTitle;
             candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
