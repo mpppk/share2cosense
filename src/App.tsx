@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Analytics } from "@vercel/analytics/react";
-import { DEFAULT_PROJECT } from "./config";
+import { DEFAULT_OPENROUTER_MODEL, DEFAULT_PROJECT, OPENROUTER_MODEL_PRESETS } from "./config";
 import { buildCosenseUrl, extractSharedContent, stripCosenseBody } from "./lib/cosense";
 import {
   addProject,
@@ -82,7 +82,7 @@ export default function App() {
   const [windowAiAvailable, setWindowAiAvailable] = useState(false);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
-  const [openRouterModel, setOpenRouterModelState] = useState("google/gemini-3.7-flash");
+  const [openRouterModel, setOpenRouterModelState] = useState(DEFAULT_OPENROUTER_MODEL);
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
   const [linkOpenMode, setLinkOpenModeState] = useState<LinkOpenMode>("auto");
@@ -103,6 +103,9 @@ export default function App() {
   const [showTextCandidates, setShowTextCandidates] = useState(false);
   const textCandidatesButtonRef = useRef<HTMLButtonElement>(null);
   const textCandidatesPopoverRef = useRef<HTMLDivElement>(null);
+  const [showModelPresets, setShowModelPresets] = useState(false);
+  const modelPresetsButtonRef = useRef<HTMLButtonElement>(null);
+  const modelPresetsPopoverRef = useRef<HTMLDivElement>(null);
   const lastRawTitleRef = useRef("");
 
   const loadProjects = useCallback(async () => {
@@ -555,24 +558,28 @@ export default function App() {
   }, [inputUrl, inputText, projectsLoading, loading, lastFetchedUrl, generate]);
 
   useEffect(() => {
-    if (!showCandidates && !showTextCandidates) return;
+    if (!showCandidates && !showTextCandidates && !showModelPresets) return;
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
         candidatesPopoverRef.current?.contains(target) ||
         candidatesButtonRef.current?.contains(target) ||
         textCandidatesPopoverRef.current?.contains(target) ||
-        textCandidatesButtonRef.current?.contains(target)
+        textCandidatesButtonRef.current?.contains(target) ||
+        modelPresetsPopoverRef.current?.contains(target) ||
+        modelPresetsButtonRef.current?.contains(target)
       ) {
         return;
       }
       setShowCandidates(false);
       setShowTextCandidates(false);
+      setShowModelPresets(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setShowCandidates(false);
         setShowTextCandidates(false);
+        setShowModelPresets(false);
       }
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -581,7 +588,7 @@ export default function App() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [showCandidates, showTextCandidates]);
+  }, [showCandidates, showTextCandidates, showModelPresets]);
 
   const handleViewChange = (next: View) => {
     setView(next);
@@ -732,6 +739,11 @@ export default function App() {
     } catch (err) {
       setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
     }
+  };
+
+  const handleOpenRouterModelPresetSelect = async (model: string) => {
+    setShowModelPresets(false);
+    await handleOpenRouterModelChange(model);
   };
 
   const handleTitlePrefixChange = async (prefix: string) => {
@@ -1463,14 +1475,61 @@ export default function App() {
                     </div>
                     <div className="share-project-field">
                       <label htmlFor="openrouter-model">モデル</label>
-                      <input
-                        id="openrouter-model"
-                        type="text"
-                        value={openRouterModel}
-                        onChange={(e) => void handleOpenRouterModelChange(e.target.value)}
-                        placeholder="google/gemini-3.7-flash"
-                        className="share-input"
-                      />
+                      <div className="share-model-row">
+                        <input
+                          id="openrouter-model"
+                          type="text"
+                          value={openRouterModel}
+                          onChange={(e) => void handleOpenRouterModelChange(e.target.value)}
+                          placeholder={DEFAULT_OPENROUTER_MODEL}
+                          className="share-input"
+                        />
+                        <div className="share-candidates-wrapper">
+                          <button
+                            ref={modelPresetsButtonRef}
+                            type="button"
+                            className="share-candidates-button"
+                            onClick={() => setShowModelPresets((v) => !v)}
+                            aria-expanded={showModelPresets}
+                            aria-haspopup="menu"
+                            aria-label="プリセットからモデルを選択"
+                          >
+                            モデルを選択
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </button>
+                          {showModelPresets && (
+                            <div
+                              ref={modelPresetsPopoverRef}
+                              className="share-candidates-popover"
+                              role="menu"
+                            >
+                              {OPENROUTER_MODEL_PRESETS.map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  className="share-candidates-item"
+                                  role="menuitem"
+                                  onClick={() => void handleOpenRouterModelPresetSelect(m)}
+                                >
+                                  <span className="share-candidates-value">{m}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     <p className="share-settings-description" style={{ marginTop: "8px" }}>
                       OpenRouter経由で選択したモデルで自動選択します。APIキーはIndexedDBに保存されます。
