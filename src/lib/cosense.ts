@@ -37,7 +37,8 @@ export type SharedContent = {
  * Extract shared URL and text from Share Target params.
  *
  * URL priority: url > URL in text > title if it looks like URL.
- * Text is the raw `text` param (may be null when only a URL was shared).
+ * Text is the raw `text` param (may be null when only a URL was shared, or
+ * when the `text` param is the URL itself — Android sends the URL in `text`).
  * Title is the raw `title` param (may be null when not sent).
  */
 export function extractSharedContent(search: string): SharedContent {
@@ -73,9 +74,13 @@ export function extractSharedContent(search: string): SharedContent {
   const sharedTitle =
     titleParamRaw && !isHttpUrl(titleParamRaw) ? truncateText(titleParamRaw, 500) : null;
 
+  // URLだけがtextとして渡された場合はテキストとしては扱わない
+  const sharedText =
+    textParam && textParam !== url ? truncateText(textParam, SHARED_TEXT_MAX_LENGTH) : null;
+
   return {
     url,
-    text: textParam ? truncateText(textParam, SHARED_TEXT_MAX_LENGTH) : null,
+    text: sharedText,
     title: sharedTitle,
   };
 }
