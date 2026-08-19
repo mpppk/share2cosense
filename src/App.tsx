@@ -838,11 +838,12 @@ export default function App() {
                       </div>
                       <button
                         type="button"
-                        className="share-title-refresh"
+                        className={`share-title-refresh${loading ? " is-loading" : ""}`}
                         onClick={() => void generate(trimmedInputUrl, trimmedInputText)}
                         disabled={isRefreshDisabled}
                         title="タイトルを取得"
                         aria-label="タイトルを取得"
+                        aria-busy={loading}
                       >
                         <svg
                           width="16"
@@ -931,7 +932,6 @@ export default function App() {
                     )}
                 </div>
               )}
-              {loading && <p className="share-loading">タイトルを取得中...</p>}
               {error && (
                 <p className="share-error" role="alert">
                   {error}
