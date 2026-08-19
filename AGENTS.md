@@ -28,13 +28,20 @@ release. Add a tool name to select part of the graph. For example, run
 
 ## Development Workflow - Git Worktree
 
-PRごとの開発は git worktree を使用して行う。
+### 作業開始時に行うこと
+
+このリポジトリ (main) のファイルを変更・作成・削除してはならない。変更が必要な場合は必ず以下の手順で worktree を用意してから作業を開始すること。
+
+1. まず `git branch --show-current` を実行して現在のブランチを確認する。
+2. 現在のブランチが `main` の場合は、作業を開始する前に必ず次のコマンドで PR 用の worktree を作成し、そのディレクトリで作業を行う:
+   ```bash
+   git worktree add /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name> -b <branch-name>
+   ```
+3. worktree 作成後は、ファイルの変更・`git commit`・`git push`・PR 作成のすべてを worktree 内で行う。
+
+### worktree の管理
 
 - worktree の base path: `/Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree`
-- 新しい PR 用 worktree の作成例:
-  ```bash
-  git worktree add /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name> -b <branch-name>
-  ```
 - worktree 一覧の確認: `git worktree list`
 - 作業完了後の削除: `git worktree remove /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name>`
 
