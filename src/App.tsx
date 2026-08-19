@@ -895,9 +895,38 @@ export default function App() {
         {view === "generate" ? (
           <>
             <div className="share-form">
-              <label htmlFor="url-input" className="share-label">
-                共有元URL
-              </label>
+              <div className="share-label-row">
+                <label htmlFor="url-input" className="share-label">
+                  共有元URL
+                </label>
+                <div className="share-label-actions">
+                  <button
+                    type="button"
+                    className={`share-refresh-button${loading ? " is-loading" : ""}`}
+                    onClick={() => void generate(trimmedInputUrl, trimmedInputText)}
+                    disabled={isRefreshDisabled}
+                    title="共有内容を再取得"
+                    aria-label="共有内容を再取得"
+                    aria-busy={loading}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
               <div className="share-input-row">
                 <input
                   id="url-input"
@@ -916,7 +945,7 @@ export default function App() {
                 <label htmlFor="text-input" className="share-label">
                   本文テキスト
                 </label>
-                <div className="share-text-actions">
+                <div className="share-label-actions">
                   <div className="share-candidates-wrapper">
                     <button
                       ref={textCandidatesButtonRef}
@@ -986,7 +1015,7 @@ export default function App() {
                     <label htmlFor="title-input" className="share-label">
                       タイトル
                     </label>
-                    <div className="share-title-actions">
+                    <div className="share-label-actions">
                       <div className="share-candidates-wrapper">
                         <button
                           ref={candidatesButtonRef}
@@ -1043,31 +1072,6 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        className={`share-title-refresh${loading ? " is-loading" : ""}`}
-                        onClick={() => void generate(trimmedInputUrl, trimmedInputText)}
-                        disabled={isRefreshDisabled}
-                        title="タイトルを取得"
-                        aria-label="タイトルを取得"
-                        aria-busy={loading}
-                      >
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                        >
-                          <polyline points="23 4 23 10 17 10" />
-                          <polyline points="1 20 1 14 7 14" />
-                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                        </svg>
-                      </button>
                     </div>
                   </div>
                   <input
@@ -1314,7 +1318,7 @@ export default function App() {
                 </li>
                 <li>
                   またはトップの「共有元URL」欄に <code>https://...</code>{" "}
-                  を貼り付けます。URLと併用して「本文テキスト」欄にテキストも入力できます。タイトル欄が表示されるので、必要に応じて編集や右側の更新ボタンで再取得ができます
+                  を貼り付けます。URLと併用して「本文テキスト」欄にテキストも入力できます。タイトル欄が表示されるので、必要に応じて編集できます。「共有元URL」の右側の更新ボタンでタイトル・テキスト候補を再取得できます
                 </li>
                 <li>
                   作成先プロジェクトはAI（設定で選択）の提案またはデフォルトプロジェクトが自動選択されます。ドロップダウンで手動変更できます
