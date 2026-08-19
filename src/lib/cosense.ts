@@ -30,6 +30,7 @@ export const SHARED_TEXT_MAX_LENGTH = 8000;
 export type SharedContent = {
   url: string | null;
   text: string | null;
+  title: string | null;
 };
 
 /**
@@ -37,6 +38,7 @@ export type SharedContent = {
  *
  * URL priority: url > URL in text > title if it looks like URL.
  * Text is the raw `text` param (may be null when only a URL was shared).
+ * Title is the raw `title` param (may be null when not sent).
  */
 export function extractSharedContent(search: string): SharedContent {
   const params = new URLSearchParams(search);
@@ -67,7 +69,15 @@ export function extractSharedContent(search: string): SharedContent {
     url = textParam;
   }
 
-  return { url, text: textParam ? truncateText(textParam, SHARED_TEXT_MAX_LENGTH) : null };
+  const titleParamRaw = params.get("title")?.trim();
+  const sharedTitle =
+    titleParamRaw && !isHttpUrl(titleParamRaw) ? truncateText(titleParamRaw, 500) : null;
+
+  return {
+    url,
+    text: textParam ? truncateText(textParam, SHARED_TEXT_MAX_LENGTH) : null,
+    title: sharedTitle,
+  };
 }
 
 function isHttpUrl(value: string): boolean {

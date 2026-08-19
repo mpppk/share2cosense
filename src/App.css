@@ -944,6 +944,125 @@
   gap: 8px;
 }
 
+.share-title-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-candidates-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.share-candidates-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s,
+    opacity 0.2s;
+}
+
+.share-candidates-button:hover:enabled {
+  background: var(--code-bg);
+  color: var(--text-h);
+  border-color: var(--accent-border);
+}
+
+.share-candidates-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.share-candidates-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.share-candidates-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 260px;
+  max-width: min(92vw, 320px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.share-candidates-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.share-candidates-item:hover {
+  background: var(--code-bg);
+  border-color: var(--border);
+}
+
+.share-candidates-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.share-candidates-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.share-candidates-value {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-h);
+  word-break: break-word;
+}
+
+.share-candidates-empty,
+.share-candidates-loading {
+  font-size: 13px;
+  color: var(--text);
+  padding: 10px 8px;
+  margin: 0;
+}
+
+.share-candidates-loading {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
 .share-title-refresh {
   width: 28px;
   height: 28px;

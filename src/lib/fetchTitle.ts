@@ -16,6 +16,10 @@ export type TitleSource = {
    * full text (e.g. via OpenRouter) instead of using the truncated body.
    */
   description: string;
+  /** Raw <title> from fetch.nibo.sh?as=meta (for candidate list) */
+  titleTag: string;
+  /** Raw og:title from fetch.nibo.sh?as=meta (for candidate list) */
+  ogTitle: string;
 };
 
 /**
@@ -41,17 +45,32 @@ export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
       const postText = extractXPostText(meta);
       const xTitle = buildXPostTitle(meta);
       if (xTitle) {
-        return { title: xTitle, description: postText };
+        return {
+          title: xTitle,
+          description: postText,
+          titleTag: meta.title,
+          ogTitle: meta.ogTitle,
+        };
       }
     }
     const description = meta.ogDescription || meta.description;
     if (!hasNoTitle(meta)) {
-      return { title: meta.ogTitle || meta.title, description };
+      return {
+        title: meta.ogTitle || meta.title,
+        description,
+        titleTag: meta.title,
+        ogTitle: meta.ogTitle,
+      };
     }
     const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
-    return { title: markdownTitle ?? rawUrl, description };
+    return {
+      title: markdownTitle ?? rawUrl,
+      description,
+      titleTag: meta.title,
+      ogTitle: meta.ogTitle,
+    };
   }
 
   const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
-  return { title: markdownTitle ?? rawUrl, description: "" };
+  return { title: markdownTitle ?? rawUrl, description: "", titleTag: "", ogTitle: "" };
 }
