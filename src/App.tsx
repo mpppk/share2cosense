@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Analytics } from "@vercel/analytics/react";
-import { DEFAULT_OPENROUTER_MODEL, DEFAULT_PROJECT, OPENROUTER_MODEL_PRESETS } from "./config";
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_PROJECT,
+  OPENROUTER_FALLBACK_MODEL,
+  OPENROUTER_MODEL_PRESETS,
+} from "./config";
 import { buildCosenseUrl, extractSharedContent, stripCosenseBody } from "./lib/cosense";
 import {
   addProject,
   deleteProject,
   getAiProvider,
+  getAllowOpenRouterFallbackModel,
   getBodyTemplate,
   getDefaultProject,
   getLinkOpenMode,
@@ -14,6 +20,7 @@ import {
   getProjects,
   getTitlePrefix,
   setAiProvider,
+  setAllowOpenRouterFallbackModel,
   setBodyTemplate,
   setDefaultProject,
   setLinkOpenMode,
@@ -83,6 +90,7 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
   const [openRouterModel, setOpenRouterModelState] = useState(DEFAULT_OPENROUTER_MODEL);
+  const [allowOpenRouterFallbackModel, setAllowOpenRouterFallbackModelState] = useState(false);
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
   const [linkOpenMode, setLinkOpenModeState] = useState<LinkOpenMode>("auto");
@@ -112,22 +120,25 @@ export default function App() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def, provider, orKey, orModel, prefix, bodyTpl, openMode] = await Promise.all([
-        getProjects(),
-        getDefaultProject(),
-        getAiProvider(),
-        getOpenRouterApiKey(),
-        getOpenRouterModel(),
-        getTitlePrefix(),
-        getBodyTemplate(),
-        getLinkOpenMode(),
-      ]);
+      const [all, def, provider, orKey, orModel, prefix, bodyTpl, openMode, fallbackModel] =
+        await Promise.all([
+          getProjects(),
+          getDefaultProject(),
+          getAiProvider(),
+          getOpenRouterApiKey(),
+          getOpenRouterModel(),
+          getTitlePrefix(),
+          getBodyTemplate(),
+          getLinkOpenMode(),
+          getAllowOpenRouterFallbackModel(),
+        ]);
       setProjects(all);
       setDefaultProjectState(def ?? "");
       setAiProviderState(provider);
       setWindowAiAvailable(isWindowAiAvailable());
       setOpenRouterApiKeyState(orKey);
       setOpenRouterModelState(orModel);
+      setAllowOpenRouterFallbackModelState(fallbackModel);
       setTitlePrefixState(prefix);
       setBodyTemplateState(bodyTpl);
       setLinkOpenModeState(openMode);
@@ -170,7 +181,9 @@ export default function App() {
         let ogTitle = "";
         let description = "";
         if (hasUrl) {
-          const source = await fetchTitleSource(trimmedUrl);
+          const source = await fetchTitleSource(trimmedUrl, {
+            fallbackOpenRouterApiKey: allowOpenRouterFallbackModel ? openRouterApiKey : "",
+          });
           fetchedTitle = source.title;
           titleTag = source.titleTag;
           ogTitle = source.ogTitle;
@@ -468,6 +481,7 @@ export default function App() {
       projects,
       openRouterApiKey,
       openRouterModel,
+      allowOpenRouterFallbackModel,
       titlePrefix,
       bodyTemplate,
       windowAiAvailable,
@@ -774,6 +788,15 @@ export default function App() {
   const handleOpenRouterModelPresetSelect = async (model: string) => {
     setShowModelPresets(false);
     await handleOpenRouterModelChange(model);
+  };
+
+  const handleAllowOpenRouterFallbackModelChange = async (enabled: boolean) => {
+    setAllowOpenRouterFallbackModelState(enabled);
+    try {
+      await setAllowOpenRouterFallbackModel(enabled);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
   };
 
   const handleTitlePrefixChange = async (prefix: string) => {
@@ -1576,6 +1599,23 @@ export default function App() {
                     <p className="share-settings-description" style={{ marginTop: "8px" }}>
                       OpenRouter経由で選択したモデルで自動選択します。APIキーはIndexedDBに保存されます。
                     </p>
+                    <div className="share-project-field">
+                      <label className="share-project-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={allowOpenRouterFallbackModel}
+                          onChange={(e) =>
+                            void handleAllowOpenRouterFallbackModelChange(e.target.checked)
+                          }
+                        />
+                        必要に応じて指定モデル以外のモデルを利用する
+                      </label>
+                      <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                        通常の方法でタイトルを取得できない場合に、タイトル取得専用モデル（
+                        {OPENROUTER_FALLBACK_MODEL}）を利用します。初期値はオフ。例:
+                        ChatGPTの共有URLは外部プロキシからのアクセスを遮断しているため、ChatGPT系モデルのブラウジング経由でタイトルのみ取得します。
+                      </p>
+                    </div>
                   </>
                 )}
               </div>

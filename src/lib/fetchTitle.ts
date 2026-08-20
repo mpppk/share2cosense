@@ -1,4 +1,5 @@
 import { createLookupSignal, fetchMarkdownTitle, fetchPageMeta, hasNoTitle } from "./pageMeta";
+import { fetchChatGptSharedTitle } from "./openRouterSelect";
 import { buildXPostTitle, extractXPostText, isXPostUrl } from "./xPost";
 
 export type TitleSource = {
@@ -23,6 +24,48 @@ export type TitleSource = {
 };
 
 /**
+ * True when the URL is a ChatGPT shared conversation.
+ * ChatGPT blocks fetch proxies, so such pages need the model-based fallback.
+ */
+export function isChatGptShareUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    const normalized = host.startsWith("www.") ? host.slice(4) : host;
+    return (
+      (normalized === "chatgpt.com" || normalized === "chat.openai.com") &&
+      url.pathname.startsWith("/share/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Optional fallback for pages the fetch proxy cannot read (e.g. ChatGPT share
+ * URLs). When enabled, the title is fetched via a browsing-capable OpenRouter
+ * model (OPENROUTER_FALLBACK_MODEL) using the given API key.
+ */
+export type FetchTitleOptions = {
+  fallbackOpenRouterApiKey?: string;
+};
+
+/**
+ * Fetch the title for a URL that the regular metadata lookup could not resolve,
+ * via the fallback model. Returns null when unavailable or unsuccessful.
+ */
+async function fetchFallbackTitle(
+  rawUrl: string,
+  options: FetchTitleOptions,
+): Promise<string | null> {
+  const apiKey = options.fallbackOpenRouterApiKey?.trim();
+  if (!apiKey || !isChatGptShareUrl(rawUrl)) {
+    return null;
+  }
+  return fetchChatGptSharedTitle(rawUrl, apiKey);
+}
+
+/**
  * Fetch the title and description for a URL via fetch-proxy (fetch.nibo.sh?as=meta).
  *
  * X posts get special handling: X puts the author in og:title ("jack (@jack) on X")
@@ -35,8 +78,15 @@ export type TitleSource = {
  *
  * Both attempts share one abort signal, so the fallback cannot stack timeouts.
  * The raw URL is the last resort.
+ *
+ * When options.fallbackOpenRouterApiKey is set and the URL is a ChatGPT share
+ * URL (which blocks fetch proxies), a browsing-capable model fetches just the
+ * title as a final fallback.
  */
-export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
+export async function fetchTitleSource(
+  rawUrl: string,
+  options: FetchTitleOptions = {},
+): Promise<TitleSource> {
   const signal = createLookupSignal();
   const meta = await fetchPageMeta(rawUrl, signal);
 
@@ -63,8 +113,9 @@ export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
       };
     }
     const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
+    const fallbackTitle = markdownTitle ? null : await fetchFallbackTitle(rawUrl, options);
     return {
-      title: markdownTitle ?? rawUrl,
+      title: fallbackTitle ?? markdownTitle ?? rawUrl,
       description,
       titleTag: meta.title,
       ogTitle: meta.ogTitle,
@@ -72,5 +123,11 @@ export async function fetchTitleSource(rawUrl: string): Promise<TitleSource> {
   }
 
   const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
-  return { title: markdownTitle ?? rawUrl, description: "", titleTag: "", ogTitle: "" };
+  const fallbackTitle = markdownTitle ? null : await fetchFallbackTitle(rawUrl, options);
+  return {
+    title: fallbackTitle ?? markdownTitle ?? rawUrl,
+    description: "",
+    titleTag: "",
+    ogTitle: "",
+  };
 }
