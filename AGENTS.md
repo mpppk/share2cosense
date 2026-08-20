@@ -48,3 +48,11 @@ release. Add a tool name to select part of the graph. For example, run
 ## Dev Server - Port
 
 `vite.config.ts:7` で `server.port` を `0` に設定し、OSが空きポートをランダムに割り当てる。複数の git worktree で同時に `vp dev` を実行してもポート衝突しない。各インスタンスは起動ログの `Local: http://localhost:<port>/` で確認する。
+
+## 1Password MCP Server
+
+1Password Environments を扱う際は、ユーザーの明示的な指示を待たずに 1Password MCP Server (`1password` / `~/.config/opencode/opencode.json:8` で `command: ["/Applications/1Password.app/Contents/MacOS/1password-mcp"]` として登録) を常に使用すること。
+
+- `list_environments` / `list_variables` / `append_variables` / `create_environment` / `create_local_env_file` / `list_local_env_files` を MCP 経由で実行する
+- MCP は secret の値は一切返さない（変数名のみ）。平文の `.env` への書き出しは避け、可能な限り `create_local_env_file` でローカルマウントされた `.env` を作成する
+- 初回呼び出し時に 1Password App の承認プロンプトが出る。Environment 単位で承認後はロックまで再承認不要
