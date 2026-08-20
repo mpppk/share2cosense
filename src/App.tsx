@@ -107,6 +107,8 @@ export default function App() {
   const modelPresetsButtonRef = useRef<HTMLButtonElement>(null);
   const modelPresetsPopoverRef = useRef<HTMLDivElement>(null);
   const lastRawTitleRef = useRef("");
+  const [titleSourceLabel, setTitleSourceLabel] = useState<string | null>(null);
+  const [textSourceLabel, setTextSourceLabel] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -361,6 +363,20 @@ export default function App() {
         }
         const finalTitle = `${titlePrefix}${rawTitle}`;
         // 本文テキスト: 共有テキストを優先し、なければ取得した説明（Xのポスト本文）を使う
+        let titleSource: string | null;
+        if (hasSharedTitle) {
+          titleSource = "共有タイトル";
+        } else if (hasText) {
+          titleSource = aiFromText ? "AI生成（テキスト）" : "テキスト冒頭";
+        } else if (aiFromDesc) {
+          titleSource = "AI生成（説明）";
+        } else if (titleTag && fetchedTitle === titleTag) {
+          titleSource = "<title>";
+        } else if (ogTitle && fetchedTitle === ogTitle) {
+          titleSource = "og:title";
+        } else {
+          titleSource = "取得タイトル";
+        }
         const defaultText = hasText
           ? trimmedText
           : truncateText(description, SHARED_TEXT_MAX_LENGTH);
@@ -375,6 +391,16 @@ export default function App() {
           });
         }
         setTextCandidates(textCands.filter((c) => c.value !== defaultText));
+        setTitleSourceLabel(titleSource);
+        setTextSourceLabel(
+          hasText
+            ? "共有テキスト"
+            : description
+              ? isXPostUrl(trimmedUrl)
+                ? "Xポスト本文"
+                : "ページの説明"
+              : null,
+        );
         if (!hasText && description) {
           setInputText(defaultText);
         }
@@ -389,6 +415,8 @@ export default function App() {
           setAiSuggestedProject(null);
           setPageExists(null);
           setCosenseUrl(null);
+          setLastFetchedUrl(hasUrl ? trimmedUrl : "");
+          setLastFetchedText(trimmedText);
           return;
         }
         if (aiProvider === "openRouter" && openRouterApiKey.trim()) {
@@ -486,6 +514,8 @@ export default function App() {
       setShowCandidates(false);
       setTextCandidates([]);
       setShowTextCandidates(false);
+      setTitleSourceLabel(null);
+      setTextSourceLabel(null);
       const url = new URL(window.location.href);
       const hadParam = ["url", "text", "title"].some((key) => url.searchParams.has(key));
       if (hadParam) {
@@ -803,6 +833,7 @@ export default function App() {
       setCopied(false);
       const trimmed = newTitle.trim();
       if (!trimmed) {
+        setTitleSourceLabel(null);
         setCosenseUrl(null);
         setPageExists(null);
         setCheckingExists(false);
@@ -875,11 +906,13 @@ export default function App() {
 
   const handleCandidateSelect = useCallback(
     (value: string) => {
+      const source = titleCandidates.find((c) => c.value === value);
+      setTitleSourceLabel(source?.label ?? null);
       const newTitle = `${titlePrefix}${value}`;
       setShowCandidates(false);
       void handleTitleChange(newTitle);
     },
-    [titlePrefix, handleTitleChange],
+    [titlePrefix, handleTitleChange, titleCandidates],
   );
 
   // 本文テキストが変わったときに本文とCosense URLを再構築する
@@ -898,11 +931,13 @@ export default function App() {
 
   const handleTextCandidateSelect = useCallback(
     (value: string) => {
+      const source = textCandidates.find((c) => c.value === value);
+      setTextSourceLabel(source?.label ?? null);
       setShowTextCandidates(false);
       setInputText(value);
       rebuildBodyFromText(value);
     },
-    [rebuildBodyFromText],
+    [rebuildBodyFromText, textCandidates],
   );
 
   const handleInputTextChange = useCallback(
@@ -975,6 +1010,7 @@ export default function App() {
                   本文テキスト
                 </label>
                 <div className="share-label-actions">
+                  {textSourceLabel && <span className="share-source-badge">{textSourceLabel}</span>}
                   <div className="share-candidates-wrapper">
                     <button
                       ref={textCandidatesButtonRef}
@@ -1031,7 +1067,10 @@ export default function App() {
               <textarea
                 id="text-input"
                 value={inputText}
-                onChange={(e) => handleInputTextChange(e.target.value)}
+                onChange={(e) => {
+                  setTextSourceLabel(null);
+                  handleInputTextChange(e.target.value);
+                }}
                 className="share-input"
                 rows={3}
                 placeholder="共有するテキスト（任意、URLと併用可）"
@@ -1045,6 +1084,9 @@ export default function App() {
                       タイトル
                     </label>
                     <div className="share-label-actions">
+                      {titleSourceLabel && (
+                        <span className="share-source-badge">{titleSourceLabel}</span>
+                      )}
                       <div className="share-candidates-wrapper">
                         <button
                           ref={candidatesButtonRef}
@@ -1107,7 +1149,10 @@ export default function App() {
                     id="title-input"
                     type="text"
                     value={title ?? ""}
-                    onChange={(e) => void handleTitleChange(e.target.value)}
+                    onChange={(e) => {
+                      setTitleSourceLabel(null);
+                      void handleTitleChange(e.target.value);
+                    }}
                     disabled={loading}
                     className="share-input"
                     placeholder={loading ? "タイトルを取得中..." : "タイトルを入力"}
