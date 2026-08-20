@@ -951,6 +951,20 @@
   gap: 8px;
 }
 
+.share-source-badge {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .share-candidates-wrapper {
   position: relative;
   display: inline-flex;
