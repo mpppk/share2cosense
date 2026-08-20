@@ -213,6 +213,24 @@ export async function setOpenRouterModel(model: string): Promise<void> {
   await db.put("settings", { key: "openRouterModel", value: model });
 }
 
+/**
+ * Whether the app may use a model other than the configured OpenRouter model
+ * when needed (e.g. fetching the title of a ChatGPT share URL). Off by default.
+ */
+export async function getAllowOpenRouterFallbackModel(): Promise<boolean> {
+  const db = await getDB();
+  const record = await db.get("settings", "allowOpenRouterFallbackModel");
+  if (!record) {
+    return false;
+  }
+  return record.value === "true";
+}
+
+export async function setAllowOpenRouterFallbackModel(enabled: boolean): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "allowOpenRouterFallbackModel", value: String(enabled) });
+}
+
 function isValidLinkOpenMode(value: string): value is LinkOpenMode {
   return value === "auto" || value === "share" || value === "newTab";
 }
