@@ -1487,16 +1487,13 @@ export default function App() {
                     className="share-input share-select"
                   >
                     <option value="none">自動選択しない</option>
-                    {windowAiAvailable && (
-                      <option value="windowAi">ブラウザAI (LanguageModel)</option>
-                    )}
+                    <option value="windowAi" disabled={!windowAiAvailable}>
+                      {windowAiAvailable
+                        ? "ブラウザAI (LanguageModel)"
+                        : "ブラウザAI (LanguageModel) - この環境では利用できません"}
+                    </option>
                     <option value="openRouter">OpenRouter</option>
                   </select>
-                  {!windowAiAvailable && (
-                    <p className="share-error" style={{ marginTop: "8px" }} role="alert">
-                      この環境ではブラウザAI（LanguageModel)は利用できません
-                    </p>
-                  )}
                   <p className="share-settings-description" style={{ marginTop: "8px" }}>
                     プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。AIで選択できなかった場合はデフォルトプロジェクトが使用されます。
                   </p>
