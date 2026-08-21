@@ -33,7 +33,7 @@ import {
 } from "./lib/db";
 import { openCosenseUrl, type LinkOpenMode } from "./lib/openExternal";
 import type { SharedContent } from "./lib/cosense";
-import { isWindowAiAvailable, selectProjectWithAi } from "./lib/aiSelect";
+import { getWindowAiAvailability, selectProjectWithAi } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { fetchTitleSource } from "./lib/fetchTitle";
@@ -98,6 +98,7 @@ export default function App() {
   const [checkingExists, setCheckingExists] = useState(false);
   const [generatedBody, setGeneratedBody] = useState<string | null>(null);
   const [aiSuggestedProject, setAiSuggestedProject] = useState<string | null>(null);
+  const [aiSelectError, setAiSelectError] = useState<string | null>(null);
   const [lastFetchedUrl, setLastFetchedUrl] = useState<string | null>(null);
   const [lastFetchedText, setLastFetchedText] = useState<string | null>(null);
   const [titleCandidates, setTitleCandidates] = useState<Array<{ label: string; value: string }>>(
@@ -118,6 +119,13 @@ export default function App() {
   const [titleSourceLabel, setTitleSourceLabel] = useState<string | null>(null);
   const [textSourceLabel, setTextSourceLabel] = useState<string | null>(null);
 
+  // ブラウザAIの実際の可用性（モデルDL状態込み）は非同期で確認する
+  const refreshWindowAiAvailability = useCallback(() => {
+    void getWindowAiAvailability().then((status) => {
+      setWindowAiAvailable(status !== "unavailable");
+    });
+  }, []);
+
   const loadProjects = useCallback(async () => {
     try {
       const [all, def, provider, orKey, orModel, prefix, bodyTpl, openMode, fallbackModel] =
@@ -135,7 +143,6 @@ export default function App() {
       setProjects(all);
       setDefaultProjectState(def ?? "");
       setAiProviderState(provider);
-      setWindowAiAvailable(isWindowAiAvailable());
       setOpenRouterApiKeyState(orKey);
       setOpenRouterModelState(orModel);
       setAllowOpenRouterFallbackModelState(fallbackModel);
@@ -149,11 +156,8 @@ export default function App() {
 
   useEffect(() => {
     void loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    setWindowAiAvailable(isWindowAiAvailable());
-  }, []);
+    refreshWindowAiAvailability();
+  }, [loadProjects, refreshWindowAiAvailability]);
 
   const generate = useCallback(
     async (rawUrl: string, rawText: string, rawSharedTitle?: string | null) => {
@@ -175,6 +179,7 @@ export default function App() {
       setShowCandidates(false);
       setTextCandidates([]);
       setShowTextCandidates(false);
+      setAiSelectError(null);
       try {
         let fetchedTitle = "";
         let titleTag = "";
@@ -432,22 +437,33 @@ export default function App() {
           setLastFetchedText(trimmedText);
           return;
         }
-        if (aiProvider === "openRouter" && openRouterApiKey.trim()) {
-          const orProject = await selectProjectWithOpenRouter(
-            projects,
-            rawTitle,
-            openRouterApiKey,
-            openRouterModel,
-          );
-          if (orProject) {
-            project = orProject;
-            aiResult = orProject;
+        if (aiProvider === "openRouter") {
+          if (!openRouterApiKey.trim()) {
+            setAiSelectError("APIキーが未設定です");
+          } else {
+            const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+              projects,
+              rawTitle,
+              openRouterApiKey,
+              openRouterModel,
+            );
+            if (orProject) {
+              project = orProject;
+              aiResult = orProject;
+            } else if (orError) {
+              setAiSelectError(orError);
+            }
           }
         } else if (aiProvider === "windowAi") {
-          const aiProject = await selectProjectWithAi(projects, rawTitle);
+          const { project: aiProject, error: aiError } = await selectProjectWithAi(
+            projects,
+            rawTitle,
+          );
           if (aiProject) {
             project = aiProject;
             aiResult = aiProject;
+          } else if (aiError) {
+            setAiSelectError(aiError);
           }
         }
         const selectedProjectData = projects.find((p) => p.name === project);
@@ -517,6 +533,7 @@ export default function App() {
       setSelectedProject(null);
       setGeneratedBody(null);
       setAiSuggestedProject(null);
+      setAiSelectError(null);
       setPageExists(null);
       setCheckingExists(false);
       setError(null);
@@ -939,6 +956,7 @@ export default function App() {
     setGeneratedBody(null);
     setSelectedProject(null);
     setAiSuggestedProject(null);
+    setAiSelectError(null);
     setPageExists(null);
     setCheckingExists(false);
     setError(null);
@@ -1279,6 +1297,12 @@ export default function App() {
                       </option>
                     ))}
                   </select>
+                  {aiSelectError && (
+                    <p className="share-warning" role="alert">
+                      AI自動選択に失敗しました（{aiSelectError}
+                      ）。デフォルトプロジェクトを使用します
+                    </p>
+                  )}
                   {aiSuggestedProject &&
                     selectedProject &&
                     aiSuggestedProject !== selectedProject && (
@@ -1561,7 +1585,7 @@ export default function App() {
                   <label htmlFor="ai-provider">プロジェクト自動選択</label>
                   <select
                     id="ai-provider"
-                    value={aiProvider === "windowAi" && !windowAiAvailable ? "none" : aiProvider}
+                    value={aiProvider}
                     onChange={(e) => void handleAiProviderChange(e.target.value as AiProvider)}
                     className="share-input share-select"
                   >
@@ -1573,8 +1597,13 @@ export default function App() {
                     </option>
                     <option value="openRouter">OpenRouter</option>
                   </select>
+                  {aiProvider === "windowAi" && !windowAiAvailable && (
+                    <p className="share-warning" role="alert">
+                      ブラウザAIはこの環境では利用できません。OpenRouterを選択するか「自動選択しない」に変更してください。
+                    </p>
+                  )}
                   <p className="share-settings-description" style={{ marginTop: "8px" }}>
-                    プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。AIで選択できなかった場合はデフォルトプロジェクトが使用されます。
+                    プロジェクトの説明と記事タイトルからAIが適切なプロジェクトを自動選択します。AIで選択できなかった場合はデフォルトプロジェクトが使用され、失敗理由が生成画面に表示されます。
                   </p>
                   <p className="share-settings-description" style={{ marginTop: "8px" }}>
                     ここでAIを選ぶと、共有テキスト（Xのポストを含む）からタイトルも生成します。「自動選択しない」の場合や生成に失敗した場合は、テキストの先頭

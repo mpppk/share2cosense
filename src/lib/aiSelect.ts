@@ -44,32 +44,27 @@ function getPromptApi(): PromptApi | null {
   return null;
 }
 
-// 旧 window.ai と新 LanguageModel の両方に対応する存在チェック（同期）
-// 実際の可用性（モデルDL状態）は selectProjectWithAi 内で非同期に確認
-export function isWindowAiAvailable(): boolean {
+export type WindowAiAvailability = "available" | "downloadable" | "downloading" | "unavailable";
+
+/**
+ * ブラウザAIの実際の可用性を非同期で確認する。
+ * APIオブジェクトの存在だけでなく、モデルのDL状態 (availability) も見る。
+ */
+export async function getWindowAiAvailability(): Promise<WindowAiAvailability> {
   const api = getPromptApi();
-  return !!api?.create;
-}
-
-// 後方互換エイリアス（新コードからは isWindowAiAvailable を使う）
-export const isLanguageModelAvailable = isWindowAiAvailable;
-
-async function isApiUnavailable(api: PromptApi): Promise<boolean> {
-  // New API: LanguageModel.availability() -> "available" | "downloadable" | "downloading" | "unavailable"
+  if (!api?.create) {
+    return "unavailable";
+  }
   if (api.availability) {
     try {
       const status = await api.availability();
-      // 文字列が直接返るケースと、オブジェクトで返るケースの両方に対応
-      if (typeof status === "string") {
-        if (status === "unavailable" || status === "no") {
-          return true;
-        }
-        // "available" | "downloadable" | "downloading" は利用試行を許可
-        return false;
-      }
-      const s = (status as unknown as { available?: string })?.available;
-      if (s === "unavailable" || s === "no") {
-        return true;
+      if (
+        status === "available" ||
+        status === "downloadable" ||
+        status === "downloading" ||
+        status === "unavailable"
+      ) {
+        return status;
       }
     } catch {
       // availability 呼び出し失敗は無視して capabilities にフォールバック
@@ -79,14 +74,22 @@ async function isApiUnavailable(api: PromptApi): Promise<boolean> {
   if (api.capabilities) {
     try {
       const caps = await api.capabilities();
-      if (caps && (caps.available === "no" || caps.available === "unavailable")) {
-        return true;
+      if (caps) {
+        if (caps.available === "readily") return "available";
+        if (caps.available === "after-download") return "downloadable";
       }
     } catch {
       // ignore
     }
   }
-  return false;
+  return "unavailable";
+}
+
+class AiTimeoutError extends Error {
+  constructor() {
+    super("AI timeout");
+    this.name = "AiTimeoutError";
+  }
 }
 
 async function createSession(
@@ -115,35 +118,43 @@ async function createSession(
   return await api.create!();
 }
 
+export type BrowserAiResult = { text: string | null; error?: string };
+
 /**
  * Run a single prompt against the browser's on-device Prompt API.
- * Returns null when the API is unavailable, times out, or errors.
+ * Returns the reply text, or null with a human-readable error reason.
  */
-export async function promptBrowserAi(
+async function promptBrowserAiDetailed(
   systemPrompt: string,
   prompt: string,
   timeoutMs: number,
-): Promise<string | null> {
+): Promise<BrowserAiResult> {
   const api = getPromptApi();
 
   if (!api?.create) {
-    return null;
+    return { text: null, error: "ブラウザAIが利用できません" };
   }
 
   try {
-    if (await isApiUnavailable(api)) {
-      return null;
+    if ((await getWindowAiAvailability()) === "unavailable") {
+      return { text: null, error: "ブラウザAIが利用できません" };
     }
 
-    const session = await createSession(api, systemPrompt);
+    let session: { prompt: (text: string) => Promise<string>; destroy?: () => void };
+    try {
+      session = await createSession(api, systemPrompt);
+    } catch {
+      return { text: null, error: "AIセッションを作成できませんでした" };
+    }
 
     try {
-      return await Promise.race<string>([
+      const text = await Promise.race<string>([
         session.prompt(prompt),
         new Promise<string>((_, reject) =>
-          setTimeout(() => reject(new Error("AI timeout")), timeoutMs),
+          setTimeout(() => reject(new AiTimeoutError()), timeoutMs),
         ),
       ]);
+      return text ? { text } : { text: null, error: "AIの応答が空でした" };
     } finally {
       if (session.destroy) {
         try {
@@ -153,37 +164,33 @@ export async function promptBrowserAi(
         }
       }
     }
-  } catch {
-    return null;
+  } catch (e) {
+    if (e instanceof AiTimeoutError) {
+      return { text: null, error: "タイムアウトしました" };
+    }
+    return { text: null, error: "AIの実行に失敗しました" };
   }
 }
 
-export async function selectProjectWithAi(
-  projects: Project[],
-  title: string,
+/**
+ * Run a single prompt against the browser's on-device Prompt API.
+ * Returns null when the API is unavailable, times out, or errors.
+ */
+export async function promptBrowserAi(
+  systemPrompt: string,
+  prompt: string,
+  timeoutMs: number,
 ): Promise<string | null> {
-  const projectList = projects
-    .map((p) => `- name: ${p.name}${p.description ? `, description: ${p.description}` : ""}`)
-    .join("\n");
+  return (await promptBrowserAiDetailed(systemPrompt, prompt, timeoutMs)).text;
+}
 
-  const prompt = `プロジェクト一覧:
-${projectList}
+const PROJECT_SELECT_TIMEOUT_MS = 10000;
 
-記事タイトル: "${title}"
-
-descriptionが空のプロジェクトはnameだけで判断してください。
-最適なprojectのnameをJSON {"projectName": "..."} で1つだけ返してください。日本語で考えてください。`;
-
-  const raw = await promptBrowserAi(
-    "あなたはCosenseプロジェクト選択AIです。与えられたプロジェクト一覧と記事タイトルから最適なプロジェクトを1つ選びます。",
-    prompt,
-    3000,
-  );
-
+/** Parse {"projectName": "..."} out of an AI reply and validate it against projects. */
+function parseProjectReply(raw: string | null, projects: Project[]): string | null {
   if (!raw) {
     return null;
   }
-
   try {
     const match = raw.match(/\{[^}]*projectName[^}]*\}/);
     const jsonStr = match ? match[0] : raw;
@@ -196,4 +203,50 @@ descriptionが空のプロジェクトはnameだけで判断してください�
   } catch {
     return null;
   }
+}
+
+export type AiSelectResult = { project: string | null; error?: string };
+
+/**
+ * Ask the browser's on-device AI to pick the best project for the title.
+ * Returns null project with an error reason when selection fails.
+ */
+export async function selectProjectWithAi(
+  projects: Project[],
+  title: string,
+): Promise<AiSelectResult> {
+  if (projects.length === 0) {
+    return { project: null };
+  }
+  if ((await getWindowAiAvailability()) === "unavailable") {
+    return { project: null, error: "ブラウザAIが利用できません" };
+  }
+
+  const projectList = projects
+    .map((p) => `- name: ${p.name}${p.description ? `, description: ${p.description}` : ""}`)
+    .join("\n");
+
+  const prompt = `プロジェクト一覧:
+${projectList}
+
+記事タイトル: "${title}"
+
+descriptionが空のプロジェクトはnameだけで判断してください。
+最適なprojectのnameをJSON {"projectName": "..."} で1つだけ返してください。日本語で考えてください。`;
+
+  const { text, error } = await promptBrowserAiDetailed(
+    "あなたはCosenseプロジェクト選択AIです。与えられたプロジェクト一覧と記事タイトルから最適なプロジェクトを1つ選びます。",
+    prompt,
+    PROJECT_SELECT_TIMEOUT_MS,
+  );
+
+  if (!text) {
+    return { project: null, error: error ?? "AIの応答がありませんでした" };
+  }
+
+  const candidate = parseProjectReply(text, projects);
+  if (!candidate) {
+    return { project: null, error: "AIの応答を解釈できませんでした" };
+  }
+  return { project: candidate };
 }

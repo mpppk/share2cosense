@@ -3,16 +3,16 @@ import type { Project } from "./db";
 import { X_TITLE_MAX_LENGTH } from "./xPost";
 
 /**
- * Post a chat completion request to OpenRouter and return the reply text.
- * Returns null when the key is missing, the request fails, or it times out.
+ * Post a chat completion request to OpenRouter and return the reply text
+ * with a human-readable error reason on failure.
  */
-async function postOpenRouterChat(
+async function postOpenRouterChatDetailed(
   apiKey: string,
   timeoutMs: number,
   body: Record<string, unknown>,
-): Promise<string | null> {
+): Promise<{ content: string | null; error?: string }> {
   if (!apiKey.trim()) {
-    return null;
+    return { content: null, error: "APIキーが未設定です" };
   }
 
   try {
@@ -21,7 +21,8 @@ async function postOpenRouterChat(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": window.location.origin,
+        "HTTP-Referer":
+          typeof window !== "undefined" ? window.location.origin : "app://share2cosense",
         "X-Title": "share2cosense",
       },
       body: JSON.stringify(body),
@@ -29,16 +30,49 @@ async function postOpenRouterChat(
     });
 
     if (!res.ok) {
-      return null;
+      const reason =
+        res.status === 401
+          ? "APIキーが無効です"
+          : res.status === 402
+            ? "クレジットが不足しています"
+            : res.status === 429
+              ? "レート制限中です"
+              : `APIエラー(HTTP ${res.status})`;
+      return { content: null, error: reason };
     }
 
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
+      error?: { message?: string };
     };
-    return data.choices?.[0]?.message?.content ?? null;
-  } catch {
-    return null;
+    const content = data.choices?.[0]?.message?.content ?? null;
+    if (!content) {
+      return {
+        content: null,
+        error: data.error?.message
+          ? `AIの応答が空でした(${data.error.message})`
+          : "AIの応答が空でした",
+      };
+    }
+    return { content };
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      return { content: null, error: "タイムアウトしました" };
+    }
+    return { content: null, error: "ネットワークエラー" };
   }
+}
+
+/**
+ * Post a chat completion request to OpenRouter and return the reply text.
+ * Returns null when the key is missing, the request fails, or it times out.
+ */
+async function postOpenRouterChat(
+  apiKey: string,
+  timeoutMs: number,
+  body: Record<string, unknown>,
+): Promise<string | null> {
+  return (await postOpenRouterChatDetailed(apiKey, timeoutMs, body)).content;
 }
 
 /**
@@ -133,12 +167,40 @@ export async function fetchChatGptSharedTitle(
   );
 }
 
+const PROJECT_SELECT_TIMEOUT_MS = 15000;
+
+export type OpenRouterSelectResult = { project: string | null; error?: string };
+
+/** Parse {"projectName": "..."} out of an AI reply and validate it against projects. */
+function parseProjectReply(content: string, projects: Project[]): string | null {
+  try {
+    const match = content.match(/\{[^}]*projectName[^}]*\}/);
+    const jsonStr = match ? match[0] : content;
+    const parsed = JSON.parse(jsonStr) as { projectName?: string };
+    const candidate = parsed.projectName?.trim();
+    if (candidate && projects.some((p) => p.name === candidate)) {
+      return candidate;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ask OpenRouter to pick the best project for the title.
+ * Returns null project with an error reason when selection fails.
+ */
 export async function selectProjectWithOpenRouter(
   projects: Project[],
   title: string,
   apiKey: string,
   model: string,
-): Promise<string | null> {
+): Promise<OpenRouterSelectResult> {
+  if (projects.length === 0) {
+    return { project: null };
+  }
+
   const projectList = projects
     .map((p) => `- name: ${p.name}${p.description ? `, description: ${p.description}` : ""}`)
     .join("\n");
@@ -153,28 +215,26 @@ ${projectList}
 descriptionが空のプロジェクトはnameだけで判断してください。
 最適なprojectのnameをJSON {"projectName": "..."} で1つだけ返してください。日本語で考えてください。`;
 
-  const content = await promptOpenRouter(
-    "あなたはCosenseプロジェクト選択AIです。与えられたプロジェクト一覧とタイトルから最適なprojectを選び、JSONで回答します。",
-    prompt,
-    apiKey,
+  const { content, error } = await postOpenRouterChatDetailed(apiKey, PROJECT_SELECT_TIMEOUT_MS, {
     model,
-    5000,
-  );
+    messages: [
+      {
+        role: "system",
+        content:
+          "あなたはCosenseプロジェクト選択AIです。与えられたプロジェクト一覧とタイトルから最適なprojectを選び、JSONで回答します。",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2,
+  });
 
   if (!content) {
-    return null;
+    return { project: null, error: error ?? "AIの応答がありませんでした" };
   }
 
-  try {
-    const match = content.match(/\{[^}]*projectName[^}]*\}/);
-    const jsonStr = match ? match[0] : content;
-    const parsed = JSON.parse(jsonStr) as { projectName?: string };
-    const candidate = parsed.projectName?.trim();
-    if (candidate && projects.some((p) => p.name === candidate)) {
-      return candidate;
-    }
-    return null;
-  } catch {
-    return null;
+  const candidate = parseProjectReply(content, projects);
+  if (!candidate) {
+    return { project: null, error: "AIの応答を解釈できませんでした" };
   }
+  return { project: candidate };
 }
