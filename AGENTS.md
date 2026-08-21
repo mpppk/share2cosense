@@ -45,6 +45,21 @@ release. Add a tool name to select part of the graph. For example, run
 - worktree 一覧の確認: `git worktree list`
 - 作業完了後の削除: `git worktree remove /Users/niboshi/ghq/github.com/mpppk/share2cosense.worktree/<branch-name>`
 
+## 複数セッションでのIssue並行処理（claimプロトコル）
+
+`issue-claim-protocol` skill に従う。リポジトリ固有設定:
+
+- CLAIM_SCOPE: `user:mpppk`
+- CLAIM_LABEL: `in-progress`
+- CLAIM_RESOURCES:
+  - `shared:fetch-proxy-api`: `src/lib/fetchTitle.ts`, `src/lib/pageMeta.ts`
+  - `lockfile`: `bun.lock`, `skills-lock.json`
+  - `ci-config`: `.github/workflows/**`
+
+claim（Draft PR）は上記の worktree を作ってから確立する。worktree はブランチの置き場所であって、claim の単位は Issue 1件。
+
+`shared:` で始まるリソースはリポジトリをまたいで排他される。`fetch-proxy` が提供する HTTP 契約（`fetch.nibo.sh?as=meta` 等）の呼び出し側がここで、提供側は mpppk/fetch-proxy の `openapi.yaml` / `openapi.json`。契約を変える作業が両リポジトリで同時に走ると片方が壊れるため、同じリソース名で排他する。
+
 ## Dev Server - Port
 
 `vite.config.ts:7` で `server.port` を `0` に設定し、OSが空きポートをランダムに割り当てる。複数の git worktree で同時に `vp dev` を実行してもポート衝突しない。各インスタンスは起動ログの `Local: http://localhost:<port>/` で確認する。
