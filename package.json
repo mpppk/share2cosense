@@ -34,7 +34,7 @@
     "packageManager": {
       "name": "bun",
       "version": "*",
-      "onFail": "download"
+      "onFail": "warn"
     }
   },
   "engines": {
