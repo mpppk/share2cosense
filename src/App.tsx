@@ -204,6 +204,9 @@ export default function App() {
               : false);
         const shouldTryAiForText = hasText && canUseAi;
         const shouldTryAiForDesc = !!description && canUseAi && description !== trimmedText;
+        // 共有テキストからAI生成する場合でも <title>要素から決定したタイトルを優先する
+        // （Xポストの<title>は「Post」等の汎用文字列になるため除外）
+        const preferTitleTag = hasUrl && !!titleTag && !isXPostUrl(trimmedUrl);
 
         // Build candidates from fetch
         const buildFetchCandidates = (): Array<{ label: string; value: string }> => {
@@ -321,7 +324,9 @@ export default function App() {
               setCandidateAiLoading(false);
             }
           }
-          if (aiFromText) {
+          if (preferTitleTag) {
+            rawTitle = titleTag;
+          } else if (aiFromText) {
             rawTitle = aiFromText;
           } else {
             rawTitle = truncateTitle(trimmedText);
@@ -329,12 +334,19 @@ export default function App() {
           const fetchCands = buildFetchCandidates().filter((c) => c.value !== rawTitle);
           candidates = [...fetchCands];
           // デフォルトタイトルも候補に含める（別の候補へ切り替えた後に戻せなくなるのを防ぐ）
-          if (aiFromText) {
-            if (!candidates.some((c) => c.value === aiFromText)) {
-              candidates.push({ label: "AI生成（テキスト）", value: aiFromText });
-            }
-          } else if (!candidates.some((c) => c.value === rawTitle)) {
-            candidates.push({ label: "テキスト冒頭", value: rawTitle });
+          if (!candidates.some((c) => c.value === rawTitle)) {
+            candidates.push({
+              label: preferTitleTag
+                ? "<title>"
+                : aiFromText
+                  ? "AI生成（テキスト）"
+                  : "テキスト冒頭",
+              value: rawTitle,
+            });
+          }
+          // AI生成（テキスト）はデフォルトでない場合も候補に残す
+          if (aiFromText && !candidates.some((c) => c.value === aiFromText)) {
+            candidates.push({ label: "AI生成（テキスト）", value: aiFromText });
           }
           if (
             aiFromDesc &&
@@ -385,7 +397,11 @@ export default function App() {
         if (hasSharedTitle) {
           titleSource = "共有タイトル";
         } else if (hasText) {
-          titleSource = aiFromText ? "AI生成（テキスト）" : "テキスト冒頭";
+          titleSource = preferTitleTag
+            ? "<title>"
+            : aiFromText
+              ? "AI生成（テキスト）"
+              : "テキスト冒頭";
         } else if (aiFromDesc) {
           titleSource = "AI生成（説明）";
         } else if (titleTag && fetchedTitle === titleTag) {
