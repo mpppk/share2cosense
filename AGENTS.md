@@ -71,3 +71,17 @@ claim（Draft PR）は上記の worktree を作ってから確立する。worktr
 - `list_environments` / `list_variables` / `append_variables` / `create_environment` / `create_local_env_file` / `list_local_env_files` を MCP 経由で実行する
 - MCP は secret の値は一切返さない（変数名のみ）。平文の `.env` への書き出しは避け、可能な限り `create_local_env_file` でローカルマウントされた `.env` を作成する
 - 初回呼び出し時に 1Password App の承認プロンプトが出る。Environment 単位で承認後はロックまで再承認不要
+
+## .env からのトークン参照（Gyazo 等）
+
+リポジトリルートの `.env` は 1Password が生成するマウントファイルで、`GYAZO_API_TOKEN` や `OPENROUTER_API_KEY` が参照できる場合がある。トークンが必要なツール（例: 検証スクリーンショットの Gyazo アップロード）は `.env` を読み込んで使用する。
+
+```bash
+set -a; source .env; set +a
+curl -H "Authorization: Bearer ${GYAZO_API_TOKEN}" -F "imagedata=@screenshot.png" \
+  https://upload.gyazo.com/api/upload
+```
+
+- トークンの値を stdout やログに出力しない（変数参照のまま使う）
+- Gyazo アップロード API のエンドポイントは `/api/upload`（旧 `/api/v1/upload` は廃止済み、401 やスタブ応答になる）
+- ルートの `.env.local` は内容が古いためトークン源として使わない
