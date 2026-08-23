@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/cosense/SKILL.md",
       "computedHash": "5830db87cc274d3cc7d242c51aeeaa4b1e307435d710f8d5b1c2d4c53237512e"
+    },
+    "cosense-task-protocol": {
+      "source": "mpppk/skills",
+      "sourceType": "github",
+      "skillPath": "cosense-task-protocol/SKILL.md",
+      "computedHash": "4be6db425deea94028ad367036a3fa7852af5c2fcf0e4df72e53c0432529618b"
     }
   }
 }

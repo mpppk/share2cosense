@@ -60,6 +60,14 @@ claim（Draft PR）は上記の worktree を作ってから確立する。worktr
 
 `shared:` で始まるリソースはリポジトリをまたいで排他される。`fetch-proxy` が提供する HTTP 契約（`fetch.nibo.sh?as=meta` 等）の呼び出し側がここで、提供側は mpppk/fetch-proxy の `openapi.yaml` / `openapi.json`。契約を変える作業が両リポジトリで同時に走ると片方が壊れるため、同じリソース名で排他する。
 
+## タスク管理
+
+コード変更やPR作成を伴う作業は `cosense-task-protocol` skill に従い、Cosenseでタスクとして管理する。設定:
+
+- COSENSE_TASK_PROJECT: `https://scrapbox.io/niboshi-tasks`
+- COSENSE_TASK_PAGE: `TODO`
+- COSENSE_TASK_STALE_HOURS: `24`
+
 ## Dev Server - Port
 
 `vite.config.ts:7` で `server.port` を `0` に設定し、OSが空きポートをランダムに割り当てる。複数の git worktree で同時に `vp dev` を実行してもポート衝突しない。各インスタンスは起動ログの `Local: http://localhost:<port>/` で確認する。
