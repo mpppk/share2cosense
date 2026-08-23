@@ -185,6 +185,8 @@ export default function App() {
         let titleTag = "";
         let ogTitle = "";
         let description = "";
+        // share.google 等の短縮URLは転送先URLへ解決し、以降の処理でこちらを使う
+        let pageUrl = trimmedUrl;
         if (hasUrl) {
           const source = await fetchTitleSource(trimmedUrl, {
             fallbackOpenRouterApiKey: allowOpenRouterFallbackModel ? openRouterApiKey : "",
@@ -193,6 +195,10 @@ export default function App() {
           titleTag = source.titleTag;
           ogTitle = source.ogTitle;
           description = source.description;
+          if (source.resolvedUrl) {
+            pageUrl = source.resolvedUrl;
+            setInputUrl(pageUrl);
+          }
         }
 
         const canUseAi =
@@ -206,7 +212,7 @@ export default function App() {
         const shouldTryAiForDesc = !!description && canUseAi && description !== trimmedText;
         // 共有テキストからAI生成する場合でも <title>要素から決定したタイトルを優先する
         // （Xポストの<title>は「Post」等の汎用文字列になるため除外）
-        const preferTitleTag = hasUrl && !!titleTag && !isXPostUrl(trimmedUrl);
+        const preferTitleTag = hasUrl && !!titleTag && !isXPostUrl(pageUrl);
 
         // Build candidates from fetch
         const buildFetchCandidates = (): Array<{ label: string; value: string }> => {
@@ -248,7 +254,7 @@ export default function App() {
               (async () => {
                 const generated = await generateTitleFromText({
                   text: trimmedText,
-                  url: hasUrl ? trimmedUrl : null,
+                  url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel,
@@ -265,7 +271,7 @@ export default function App() {
               (async () => {
                 const generated = await generateTitleFromText({
                   text: description,
-                  url: hasUrl ? trimmedUrl : null,
+                  url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel,
@@ -293,7 +299,7 @@ export default function App() {
               (async () => {
                 const generated = await generateTitleFromText({
                   text: trimmedText,
-                  url: hasUrl ? trimmedUrl : null,
+                  url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel,
@@ -307,7 +313,7 @@ export default function App() {
               (async () => {
                 const generated = await generateTitleFromText({
                   text: description,
-                  url: hasUrl ? trimmedUrl : null,
+                  url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel,
@@ -363,7 +369,7 @@ export default function App() {
             try {
               const generated = await generateTitleFromText({
                 text: description,
-                url: trimmedUrl,
+                url: pageUrl,
                 aiProvider,
                 openRouterApiKey,
                 openRouterModel,
@@ -420,7 +426,7 @@ export default function App() {
         }
         if (description && description !== trimmedText) {
           textCands.push({
-            label: isXPostUrl(trimmedUrl) ? "Xポスト本文" : "ページの説明",
+            label: isXPostUrl(pageUrl) ? "Xポスト本文" : "ページの説明",
             value: truncateText(description, SHARED_TEXT_MAX_LENGTH),
           });
         }
@@ -430,7 +436,7 @@ export default function App() {
           hasText
             ? "共有テキスト"
             : description
-              ? isXPostUrl(trimmedUrl)
+              ? isXPostUrl(pageUrl)
                 ? "Xポスト本文"
                 : "ページの説明"
               : null,
@@ -439,7 +445,7 @@ export default function App() {
           setInputText(defaultText);
         }
         lastRawTitleRef.current = rawTitle;
-        const body = buildBody(bodyTemplate, trimmedUrl, defaultText, rawTitle);
+        const body = buildBody(bodyTemplate, pageUrl, defaultText, rawTitle);
         let project = defaultProject || projects[0]?.name || "";
         let aiResult: string | null = null;
         if (projects.length === 0 || !project) {
@@ -449,7 +455,7 @@ export default function App() {
           setAiSuggestedProject(null);
           setPageExists(null);
           setCosenseUrl(null);
-          setLastFetchedUrl(hasUrl ? trimmedUrl : "");
+          setLastFetchedUrl(hasUrl ? pageUrl : "");
           setLastFetchedText(trimmedText);
           return;
         }
@@ -499,7 +505,7 @@ export default function App() {
         setSelectedProject(project);
         setGeneratedBody(body);
         setAiSuggestedProject(aiResult);
-        setLastFetchedUrl(hasUrl ? trimmedUrl : "");
+        setLastFetchedUrl(hasUrl ? pageUrl : "");
         setLastFetchedText(trimmedText);
       } catch (e) {
         setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");

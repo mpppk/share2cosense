@@ -9,6 +9,11 @@ export type PageMeta = {
   ogSiteName: string;
   ogImage: string;
   description: string;
+  /**
+   * URL the origin request landed on after the proxy followed redirects.
+   * Empty when the proxy predates the field or no redirect was observable.
+   */
+  finalUrl: string;
 };
 
 /**
@@ -78,6 +83,7 @@ export async function fetchPageMeta(
       ogSiteName: asString(data.ogSiteName),
       ogImage: asString(data.ogImage),
       description: asString(data.description),
+      finalUrl: asString(data.finalUrl),
     };
   } catch {
     return null;

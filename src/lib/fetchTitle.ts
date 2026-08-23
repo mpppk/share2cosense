@@ -1,4 +1,10 @@
-import { createLookupSignal, fetchMarkdownTitle, fetchPageMeta, hasNoTitle } from "./pageMeta";
+import {
+  createLookupSignal,
+  fetchMarkdownTitle,
+  fetchPageMeta,
+  hasNoTitle,
+  type PageMeta,
+} from "./pageMeta";
 import { fetchChatGptSharedTitle } from "./openRouterSelect";
 import { buildXPostTitle, extractXPostText, isXPostUrl } from "./xPost";
 
@@ -21,6 +27,11 @@ export type TitleSource = {
   titleTag: string;
   /** Raw og:title from fetch.nibo.sh?as=meta (for candidate list) */
   ogTitle: string;
+  /**
+   * Redirect destination for share.google short links, when the proxy reported
+   * one that differs from the shared URL. Empty otherwise.
+   */
+  resolvedUrl: string;
 };
 
 /**
@@ -39,6 +50,32 @@ export function isChatGptShareUrl(rawUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * True when the URL is a Google share short link (share.google/…).
+ * These redirect to the real page, so callers should prefer the resolved
+ * destination URL over the short link.
+ */
+export function isShareGoogleUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return url.hostname.toLowerCase() === "share.google";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The URL a share.google link resolves to, or "" when it does not apply:
+ * non-share.google URLs, proxies without finalUrl support, or a finalUrl
+ * that did not move anywhere.
+ */
+export function resolveShareGoogleUrl(rawUrl: string, meta: PageMeta | null): string {
+  if (!meta?.finalUrl || !isShareGoogleUrl(rawUrl)) {
+    return "";
+  }
+  return meta.finalUrl === rawUrl ? "" : meta.finalUrl;
 }
 
 /**
@@ -82,6 +119,9 @@ async function fetchFallbackTitle(
  * When options.fallbackOpenRouterApiKey is set and the URL is a ChatGPT share
  * URL (which blocks fetch proxies), a browsing-capable model fetches just the
  * title as a final fallback.
+ *
+ * share.google short links additionally expose their redirect destination as
+ * TitleSource.resolvedUrl, taken from the proxy's finalUrl.
  */
 export async function fetchTitleSource(
   rawUrl: string,
@@ -89,6 +129,7 @@ export async function fetchTitleSource(
 ): Promise<TitleSource> {
   const signal = createLookupSignal();
   const meta = await fetchPageMeta(rawUrl, signal);
+  const resolvedUrl = resolveShareGoogleUrl(rawUrl, meta);
 
   if (meta) {
     if (isXPostUrl(rawUrl)) {
@@ -100,6 +141,7 @@ export async function fetchTitleSource(
           description: postText,
           titleTag: meta.title,
           ogTitle: meta.ogTitle,
+          resolvedUrl,
         };
       }
     }
@@ -110,6 +152,7 @@ export async function fetchTitleSource(
         description,
         titleTag: meta.title,
         ogTitle: meta.ogTitle,
+        resolvedUrl,
       };
     }
     const markdownTitle = await fetchMarkdownTitle(rawUrl, signal);
@@ -119,6 +162,7 @@ export async function fetchTitleSource(
       description,
       titleTag: meta.title,
       ogTitle: meta.ogTitle,
+      resolvedUrl,
     };
   }
 
@@ -129,5 +173,6 @@ export async function fetchTitleSource(
     description: "",
     titleTag: "",
     ogTitle: "",
+    resolvedUrl,
   };
 }
