@@ -536,6 +536,15 @@ export default function App() {
         setInputText(shared.text);
       }
       setView("generate");
+      return;
+    }
+    // share_target経由で開かれていない場合はURLを入力しに来ていることが多いのでフォーカスする
+    // （#usage / #settings で開かれた場合は対象ビューのUIを優先する）
+    const hash = window.location.hash;
+    if (hash !== "#usage" && hash !== "#settings") {
+      requestAnimationFrame(() => {
+        document.getElementById("url-input")?.focus();
+      });
     }
   }, []);
 
