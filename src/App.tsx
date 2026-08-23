@@ -540,8 +540,10 @@ export default function App() {
     }
     // share_target経由で開かれていない場合はURLを入力しに来ていることが多いのでフォーカスする
     // （#usage / #settings で開かれた場合は対象ビューのUIを優先する）
+    // StrictModeの二重実行時は後続effectがURLパラメータを一時的に書き換えるため、
+    // 初回の共有判定結果を優先する
     const hash = window.location.hash;
-    if (hash !== "#usage" && hash !== "#settings") {
+    if (!initialSharedRef.current && hash !== "#usage" && hash !== "#settings") {
       requestAnimationFrame(() => {
         document.getElementById("url-input")?.focus();
       });
