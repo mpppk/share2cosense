@@ -22,7 +22,7 @@ description: >-
 - `gh` CLI, `vp` (vite-plus), `vercel` CLI, `bun` が利用可能であること
 - `git fetch origin` で最新を取得しておく
 - Chrome DevTools MCP (`chrome-devtools_*` tools) が利用可能か確認。利用不可なら `npx -y chrome-devtools-mcp@latest` をMCP設定に追加するよう案内
-- Gyazo は任意。`command -v gyazo` で有無を判定し、利用可能ならキャプチャを撮影
+- Gyazo は任意。`command -v gyazo` でCLIの有無を判定。CLIが無くてもリポジトリルートの `.env` に `GYAZO_API_TOKEN` があれば Gyazo APIでアップロード可能（2-2-c参照）
 
 ## 手順概要
 
@@ -147,13 +147,26 @@ chrome-devtools_list_network_requests(resourceTypes: ["document","script","style
 
 ```bash
 command -v gyazo >/dev/null 2>&1 && echo "gyazo available" || echo "gyazo not available"
-# 利用可能な場合
+# CLIが利用可能な場合
 gyazo /path/to/screenshot.png
 # または chrome-devtools_take_screenshot で保存したファイルを gyazo にアップロード
 # 例: chrome-devtools_take_screenshot(filePath: "/tmp/local-preview.png") → gyazo /tmp/local-preview.png
+
+# CLIが無い場合は .env の GYAZO_API_TOKEN で Gyazo APIに直接アップロードする
+# （リポジトリルートの .env は1Passwordが生成するマウントファイル。AGENTS.md「.env からのトークン参照」参照）
+set -a; source .env; set +a
+curl -s -H "Authorization: Bearer ${GYAZO_API_TOKEN}" \
+  -F "imagedata=@/tmp/local-preview.png" \
+  -F "desc=<キャプチャの説明>" \
+  https://upload.gyazo.com/api/upload | jq -r '.url'
 ```
 
-- `gyazo` CLIが無い環境では `chrome-devtools_take_screenshot` の画像をユーザーに提示することで代替
+- `gyazo` CLIが無くても `.env` に `GYAZO_API_TOKEN` があればAPIでアップロードする（CLIなしを理由にGyazoを諦めない）
+- APIアップロード時の注意:
+  - エンドポイントは `https://upload.gyazo.com/api/upload`（旧 `/api/v1/upload` は廃止済み）
+  - トークンの値を stdout やログに出力しない（`${GYAZO_API_TOKEN}` 変数参照のまま使う）
+  - ルートの `.env.local` は内容が古いためトークン源として使わない
+- 上記も不可の環境では `chrome-devtools_take_screenshot` の画像をユーザーに提示することで代替
 - 撮影したキャプチャURLをPRコメントまたは最終報告に含める: `gh pr comment <num> --body "Local preview: <gyazo-url>"`
 
 **d. 検証結果の記録**
@@ -267,10 +280,14 @@ chrome-devtools_performance_start_trace(autoStop: true, reload: true)
 - コンソールエラー、404/500、レイアウト崩れがないか確認
 - 差分があれば `vp build` の成果物と本番配信ハッシュが一致しているか `curl` で突き合わせ
 
-Gyazoが利用可能な場合:
+Gyazoが利用可能な場合（CLI、または `.env` の `GYAZO_API_TOKEN` によるAPIアップロード。手順は2-2-c参照）:
 
 ```bash
 gyazo /tmp/prod-preview.png
+# CLIが無い場合は API でアップロード
+# set -a; source .env; set +a
+# curl -s -H "Authorization: Bearer ${GYAZO_API_TOKEN}" -F "imagedata=@/tmp/prod-preview.png" \
+#   https://upload.gyazo.com/api/upload | jq -r '.url'
 # URLを最終報告に含める
 ```
 
@@ -342,5 +359,5 @@ git push --force-with-lease origin renovate/<name>
 - `vp check` は `0.2.8` (oxfmt 0.61, oxlint 1.76) と `0.2.9` (oxfmt 0.62, oxlint 1.77, oxc 0.143) で結果が変わる。フォーマット・lintエラーが出た場合は型エラーの可能性も疑う
 - `bun.lock` のコンフリクトは `git checkout --ours bun.lock && vp install && git add bun.lock` で再生成が最も安全
 - Chrome DevTools MCP が使えない環境では `curl -I` と `vp preview` の目視で代替するが、可能な限り chrome-devtools を使う
-- Gyazo は任意。無い環境では `chrome-devtools_take_screenshot` の画像を直接提示する
+- Gyazo は任意。`gyazo` CLIが無くても `.env` の `GYAZO_API_TOKEN` でAPIアップロード可能（2-2-c参照）。どちらも不可の環境では `chrome-devtools_take_screenshot` の画像を直接提示する
 - `vercel deploy --prod` は課金・レート制限に注意。自動デプロイが有効な場合は手動デプロイ不要
