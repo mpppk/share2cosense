@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vite-plus/test";
-import { hasNoTitle, parseMarkdownTitle, type PageMeta } from "./pageMeta";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { fetchPageMeta, hasNoTitle, parseMarkdownTitle, type PageMeta } from "./pageMeta";
 
 function meta(overrides: Partial<PageMeta> = {}): PageMeta {
   return {
@@ -9,9 +9,46 @@ function meta(overrides: Partial<PageMeta> = {}): PageMeta {
     ogSiteName: "",
     ogImage: "",
     description: "",
+    finalUrl: "",
     ...overrides,
   };
 }
+
+describe("fetchPageMeta", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("parses finalUrl from the proxy response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ title: "T", ogTitle: "", finalUrl: "https://example.com/real" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+    );
+    const result = await fetchPageMeta("https://share.google/abc");
+    expect(result?.finalUrl).toBe("https://example.com/real");
+  });
+
+  it("keeps finalUrl empty when the proxy predates the field", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ title: "T" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const result = await fetchPageMeta("https://example.com/");
+    expect(result?.finalUrl).toBe("");
+  });
+});
 
 describe("hasNoTitle", () => {
   it("is true when neither og:title nor <title> was found", () => {
