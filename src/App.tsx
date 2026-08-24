@@ -36,6 +36,7 @@ import type { SharedContent } from "./lib/cosense";
 import { getWindowAiAvailability, selectProjectWithAi } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
+import { isOpenRouterModelPreset, validateOpenRouterModel } from "./lib/openRouterModels";
 import { fetchTitleSource } from "./lib/fetchTitle";
 import { generateTitleFromText } from "./lib/generateTitle";
 import { SHARED_TEXT_MAX_LENGTH } from "./lib/cosense";
@@ -43,6 +44,16 @@ import { X_TITLE_MAX_LENGTH, isXPostUrl, truncateText, truncateTitle } from "./l
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
+
+/** Debounce before validating a manually typed OpenRouter model ID. */
+const MODEL_VALIDATE_DEBOUNCE_MS = 500;
+
+type ModelValidationUiState = {
+  status: "idle" | "validating" | "error";
+  message: string | null;
+};
+
+const IDLE_MODEL_VALIDATION: ModelValidationUiState = { status: "idle", message: null };
 
 function buildBody(template: string, url: string, text: string, rawTitle: string): string {
   let body = template
@@ -90,6 +101,14 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
   const [openRouterModel, setOpenRouterModelState] = useState(DEFAULT_OPENROUTER_MODEL);
+  // The last model ID confirmed valid (loaded from IndexedDB or validated on
+  // input). AI features always use this instead of the raw input value, so an
+  // invalid ID being typed never breaks generation.
+  const [savedOpenRouterModel, setSavedOpenRouterModel] = useState(DEFAULT_OPENROUTER_MODEL);
+  const [modelValidation, setModelValidation] =
+    useState<ModelValidationUiState>(IDLE_MODEL_VALIDATION);
+  const modelValidateTimerRef = useRef<number | null>(null);
+  const modelValidateSeqRef = useRef(0);
   const [allowOpenRouterFallbackModel, setAllowOpenRouterFallbackModelState] = useState(false);
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
@@ -145,6 +164,8 @@ export default function App() {
       setAiProviderState(provider);
       setOpenRouterApiKeyState(orKey);
       setOpenRouterModelState(orModel);
+      setSavedOpenRouterModel(orModel);
+      setModelValidation(IDLE_MODEL_VALIDATION);
       setAllowOpenRouterFallbackModelState(fallbackModel);
       setTitlePrefixState(prefix);
       setBodyTemplateState(bodyTpl);
@@ -158,6 +179,15 @@ export default function App() {
     void loadProjects();
     refreshWindowAiAvailability();
   }, [loadProjects, refreshWindowAiAvailability]);
+
+  useEffect(
+    () => () => {
+      if (modelValidateTimerRef.current !== null) {
+        clearTimeout(modelValidateTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const generate = useCallback(
     async (rawUrl: string, rawText: string, rawSharedTitle?: string | null) => {
@@ -257,7 +287,7 @@ export default function App() {
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
-                  openRouterModel,
+                  openRouterModel: savedOpenRouterModel,
                 });
                 if (generated && generated !== rawTitle) {
                   aiFromText = generated;
@@ -274,7 +304,7 @@ export default function App() {
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
-                  openRouterModel,
+                  openRouterModel: savedOpenRouterModel,
                 });
                 if (generated && generated !== rawTitle) {
                   aiFromDesc = generated;
@@ -302,7 +332,7 @@ export default function App() {
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
-                  openRouterModel,
+                  openRouterModel: savedOpenRouterModel,
                 });
                 if (generated) aiFromText = generated;
               })(),
@@ -316,7 +346,7 @@ export default function App() {
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
                   openRouterApiKey,
-                  openRouterModel,
+                  openRouterModel: savedOpenRouterModel,
                 });
                 if (generated) aiFromDesc = generated;
               })(),
@@ -372,7 +402,7 @@ export default function App() {
                 url: pageUrl,
                 aiProvider,
                 openRouterApiKey,
-                openRouterModel,
+                openRouterModel: savedOpenRouterModel,
               });
               if (generated) aiFromDesc = generated;
             } finally {
@@ -467,7 +497,7 @@ export default function App() {
               projects,
               rawTitle,
               openRouterApiKey,
-              openRouterModel,
+              savedOpenRouterModel,
             );
             if (orProject) {
               project = orProject;
@@ -518,7 +548,7 @@ export default function App() {
       aiProvider,
       projects,
       openRouterApiKey,
-      openRouterModel,
+      savedOpenRouterModel,
       allowOpenRouterFallbackModel,
       titlePrefix,
       bodyTemplate,
@@ -826,13 +856,50 @@ export default function App() {
     }
   };
 
-  const handleOpenRouterModelChange = async (model: string) => {
-    setOpenRouterModelState(model);
+  const persistOpenRouterModel = async (model: string) => {
     try {
       await setOpenRouterModel(model);
+      setSavedOpenRouterModel(model);
     } catch (err) {
       setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
     }
+  };
+
+  const handleOpenRouterModelChange = async (model: string) => {
+    setOpenRouterModelState(model);
+    if (modelValidateTimerRef.current !== null) {
+      clearTimeout(modelValidateTimerRef.current);
+      modelValidateTimerRef.current = null;
+    }
+    const trimmed = model.trim();
+    // Presets are hardcoded valid IDs: persist immediately without a network
+    // round-trip so they keep working offline.
+    if (trimmed && isOpenRouterModelPreset(trimmed)) {
+      setModelValidation(IDLE_MODEL_VALIDATION);
+      await persistOpenRouterModel(trimmed);
+      return;
+    }
+    if (!trimmed) {
+      setModelValidation({ status: "error", message: "モデルIDを入力してください" });
+      return;
+    }
+    setModelValidation({ status: "validating", message: null });
+    const seq = ++modelValidateSeqRef.current;
+    modelValidateTimerRef.current = window.setTimeout(() => {
+      void (async () => {
+        const v = await validateOpenRouterModel(trimmed);
+        if (seq !== modelValidateSeqRef.current) {
+          return;
+        }
+        modelValidateTimerRef.current = null;
+        if (v.result === "valid") {
+          setModelValidation(IDLE_MODEL_VALIDATION);
+          await persistOpenRouterModel(v.model);
+        } else {
+          setModelValidation({ status: "error", message: v.message });
+        }
+      })();
+    }, MODEL_VALIDATE_DEBOUNCE_MS);
   };
 
   const handleOpenRouterModelPresetSelect = async (model: string) => {
@@ -1713,9 +1780,24 @@ export default function App() {
                           )}
                         </div>
                       </div>
+                      {modelValidation.status !== "idle" && (
+                        <p
+                          className={
+                            modelValidation.status === "validating"
+                              ? "share-settings-description"
+                              : "share-warning"
+                          }
+                          role={modelValidation.status === "validating" ? undefined : "alert"}
+                          style={{ marginTop: "8px" }}
+                        >
+                          {modelValidation.status === "validating"
+                            ? "モデルIDを検証中…"
+                            : modelValidation.message}
+                        </p>
+                      )}
                     </div>
                     <p className="share-settings-description" style={{ marginTop: "8px" }}>
-                      OpenRouter経由で選択したモデルで自動選択します。APIキーはIndexedDBに保存されます。
+                      OpenRouter経由で選択したモデルで自動選択します。APIキーはIndexedDBに保存されます。手入力したモデルIDはOpenRouterのモデル一覧で有効性を確認してから保存します。
                     </p>
                     <div className="share-project-field">
                       <label className="share-project-checkbox">
