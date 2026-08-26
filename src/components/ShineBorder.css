@@ -1,4 +1,5 @@
 .shine-border {
+  box-sizing: border-box;
   pointer-events: none;
   position: absolute;
   inset: 0;
