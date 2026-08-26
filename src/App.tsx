@@ -11,6 +11,7 @@ import {
   addProject,
   deleteProject,
   getAiProvider,
+  getAiCustomPrompt,
   getAllowOpenRouterFallbackModel,
   getBodyTemplate,
   getDefaultProject,
@@ -20,6 +21,7 @@ import {
   getProjects,
   getTitlePrefix,
   setAiProvider,
+  setAiCustomPrompt,
   setAllowOpenRouterFallbackModel,
   setBodyTemplate,
   setDefaultProject,
@@ -111,6 +113,7 @@ export default function App() {
   const modelValidateSeqRef = useRef(0);
   const [allowOpenRouterFallbackModel, setAllowOpenRouterFallbackModelState] = useState(false);
   const [titlePrefix, setTitlePrefixState] = useState("");
+  const [aiCustomPrompt, setAiCustomPromptState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
   const [linkOpenMode, setLinkOpenModeState] = useState<LinkOpenMode>("auto");
   const [pageExists, setPageExists] = useState<boolean | null>(null);
@@ -147,18 +150,29 @@ export default function App() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const [all, def, provider, orKey, orModel, prefix, bodyTpl, openMode, fallbackModel] =
-        await Promise.all([
-          getProjects(),
-          getDefaultProject(),
-          getAiProvider(),
-          getOpenRouterApiKey(),
-          getOpenRouterModel(),
-          getTitlePrefix(),
-          getBodyTemplate(),
-          getLinkOpenMode(),
-          getAllowOpenRouterFallbackModel(),
-        ]);
+      const [
+        all,
+        def,
+        provider,
+        orKey,
+        orModel,
+        prefix,
+        customPrompt,
+        bodyTpl,
+        openMode,
+        fallbackModel,
+      ] = await Promise.all([
+        getProjects(),
+        getDefaultProject(),
+        getAiProvider(),
+        getOpenRouterApiKey(),
+        getOpenRouterModel(),
+        getTitlePrefix(),
+        getAiCustomPrompt(),
+        getBodyTemplate(),
+        getLinkOpenMode(),
+        getAllowOpenRouterFallbackModel(),
+      ]);
       setProjects(all);
       setDefaultProjectState(def ?? "");
       setAiProviderState(provider);
@@ -168,6 +182,7 @@ export default function App() {
       setModelValidation(IDLE_MODEL_VALIDATION);
       setAllowOpenRouterFallbackModelState(fallbackModel);
       setTitlePrefixState(prefix);
+      setAiCustomPromptState(customPrompt);
       setBodyTemplateState(bodyTpl);
       setLinkOpenModeState(openMode);
     } finally {
@@ -288,6 +303,7 @@ export default function App() {
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel: savedOpenRouterModel,
+                  customPrompt: aiCustomPrompt,
                 });
                 if (generated && generated !== rawTitle) {
                   aiFromText = generated;
@@ -305,6 +321,7 @@ export default function App() {
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel: savedOpenRouterModel,
+                  customPrompt: aiCustomPrompt,
                 });
                 if (generated && generated !== rawTitle) {
                   aiFromDesc = generated;
@@ -333,6 +350,7 @@ export default function App() {
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel: savedOpenRouterModel,
+                  customPrompt: aiCustomPrompt,
                 });
                 if (generated) aiFromText = generated;
               })(),
@@ -347,6 +365,7 @@ export default function App() {
                   aiProvider,
                   openRouterApiKey,
                   openRouterModel: savedOpenRouterModel,
+                  customPrompt: aiCustomPrompt,
                 });
                 if (generated) aiFromDesc = generated;
               })(),
@@ -403,6 +422,7 @@ export default function App() {
                 aiProvider,
                 openRouterApiKey,
                 openRouterModel: savedOpenRouterModel,
+                customPrompt: aiCustomPrompt,
               });
               if (generated) aiFromDesc = generated;
             } finally {
@@ -551,6 +571,7 @@ export default function App() {
       savedOpenRouterModel,
       allowOpenRouterFallbackModel,
       titlePrefix,
+      aiCustomPrompt,
       bodyTemplate,
       windowAiAvailable,
     ],
@@ -920,6 +941,15 @@ export default function App() {
     setTitlePrefixState(prefix);
     try {
       await setTitlePrefix(prefix);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
+  const handleAiCustomPromptChange = async (prompt: string) => {
+    setAiCustomPromptState(prompt);
+    try {
+      await setAiCustomPrompt(prompt);
     } catch (err) {
       setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
     }
@@ -1709,6 +1739,23 @@ export default function App() {
                     ここでAIを選ぶと、共有テキスト（Xのポストを含む）からタイトルも生成します。「自動選択しない」の場合や生成に失敗した場合は、テキストの先頭
                     {X_TITLE_MAX_LENGTH}文字がタイトルになります。
                   </p>
+                  <div className="share-project-field">
+                    <label htmlFor="ai-custom-prompt">
+                      AIタイトル生成のカスタムプロンプト（任意）
+                    </label>
+                    <textarea
+                      id="ai-custom-prompt"
+                      value={aiCustomPrompt}
+                      onChange={(e) => void handleAiCustomPromptChange(e.target.value)}
+                      placeholder="例: 技術用語を残し、短い日本語のタイトルにしてください"
+                      className="share-input"
+                      rows={3}
+                      style={{ resize: "vertical" }}
+                    />
+                    <p className="share-settings-description">
+                      共有テキスト・ページ説明・XポストからAIがタイトルを生成するときに、標準の指示へ追加します。AIによる自動選択が有効な場合に使用されます。
+                    </p>
+                  </div>
                 </div>
                 {aiProvider === "openRouter" && (
                   <>

@@ -15,7 +15,11 @@ const TIMEOUT_MS = 8000;
 const SYSTEM_PROMPT =
   "あなたは共有されたコンテンツのタイトル生成AIです。本文（と共有元URL）から、内容が一目で分かる簡潔なタイトルを1つ作ります。";
 
-function buildPrompt(text: string, url: string | null): string {
+export function buildPrompt(text: string, url: string | null, customPrompt = ""): string {
+  const additionalInstructions = customPrompt.trim()
+    ? `\n追加の指示:\n${customPrompt.trim()}\n`
+    : "";
+
   return `以下は共有されたコンテンツです。
 ${url ? `\n共有元URL: ${url}\n` : ""}
 """
@@ -29,6 +33,7 @@ ${text}
 - 本文をそのまま切り出すのではなく、内容を要約する
 - 鉤括弧や引用符で囲まない
 - 「〜について」のような冗長な表現は避ける
+${additionalInstructions}
 
 JSON {"title": "..."} の形式で1つだけ返してください。`;
 }
@@ -83,15 +88,16 @@ export async function generateTitleFromText(options: {
   aiProvider: AiProvider;
   openRouterApiKey: string;
   openRouterModel: string;
+  customPrompt?: string;
 }): Promise<string | null> {
-  const { text, url, aiProvider, openRouterApiKey, openRouterModel } = options;
+  const { text, url, aiProvider, openRouterApiKey, openRouterModel, customPrompt } = options;
 
   const source = text.trim();
   if (!source) {
     return null;
   }
 
-  const prompt = buildPrompt(source, url);
+  const prompt = buildPrompt(source, url, customPrompt);
   let raw: string | null = null;
 
   if (aiProvider === "openRouter") {

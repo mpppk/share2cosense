@@ -260,6 +260,17 @@ export async function setTitlePrefix(prefix: string): Promise<void> {
   await db.put("settings", { key: "titlePrefix", value: prefix });
 }
 
+export async function getAiCustomPrompt(): Promise<string> {
+  const db = await getDB();
+  const record = await db.get("settings", "aiCustomPrompt");
+  return record?.value ?? "";
+}
+
+export async function setAiCustomPrompt(prompt: string): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "aiCustomPrompt", value: prompt });
+}
+
 export async function getBodyTemplate(): Promise<string> {
   const db = await getDB();
   const record = await db.get("settings", "bodyTemplate");
