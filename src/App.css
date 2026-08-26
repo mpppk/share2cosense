@@ -218,6 +218,7 @@
 }
 
 .share-form {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -225,6 +226,11 @@
   border-radius: 12px;
   padding: 20px;
   background: var(--bg);
+  overflow: hidden;
+}
+
+.share-form.is-generating {
+  border-color: transparent;
 }
 
 .share-label {

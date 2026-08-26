@@ -41,6 +41,7 @@ import { fetchTitleSource } from "./lib/fetchTitle";
 import { generateTitleFromText } from "./lib/generateTitle";
 import { SHARED_TEXT_MAX_LENGTH } from "./lib/cosense";
 import { X_TITLE_MAX_LENGTH, isXPostUrl, truncateText, truncateTitle } from "./lib/xPost";
+import { ShineBorder } from "./components/ShineBorder";
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
@@ -1130,7 +1131,14 @@ export default function App() {
       <main className="share-container">
         {view === "generate" ? (
           <>
-            <div className="share-form">
+            <div className={`share-form${loading ? " is-generating" : ""}`}>
+              {loading && (
+                <ShineBorder
+                  borderWidth={1}
+                  duration={8}
+                  shineColor={["#ef4444", "#3b82f6", "#a855f7"]}
+                />
+              )}
               <div className="share-label-row">
                 <label htmlFor="url-input" className="share-label">
                   共有元URL
