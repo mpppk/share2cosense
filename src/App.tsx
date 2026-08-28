@@ -40,7 +40,7 @@ import { checkPageExists } from "./lib/existsCheck";
 import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
 import { isOpenRouterModelPreset, validateOpenRouterModel } from "./lib/openRouterModels";
 import { fetchTitleSource } from "./lib/fetchTitle";
-import { generateTitleFromText } from "./lib/generateTitle";
+import { generateTitleFromTextDetailed } from "./lib/generateTitle";
 import { SHARED_TEXT_MAX_LENGTH } from "./lib/cosense";
 import { X_TITLE_MAX_LENGTH, isXPostUrl, truncateText, truncateTitle } from "./lib/xPost";
 import { ShineBorder } from "./components/ShineBorder";
@@ -122,6 +122,7 @@ export default function App() {
   const [generatedBody, setGeneratedBody] = useState<string | null>(null);
   const [aiSuggestedProject, setAiSuggestedProject] = useState<string | null>(null);
   const [aiSelectError, setAiSelectError] = useState<string | null>(null);
+  const [aiTitleError, setAiTitleError] = useState<string | null>(null);
   const [lastFetchedUrl, setLastFetchedUrl] = useState<string | null>(null);
   const [lastFetchedText, setLastFetchedText] = useState<string | null>(null);
   const [titleCandidates, setTitleCandidates] = useState<Array<{ label: string; value: string }>>(
@@ -226,6 +227,7 @@ export default function App() {
       setTextCandidates([]);
       setShowTextCandidates(false);
       setAiSelectError(null);
+      setAiTitleError(null);
       try {
         let fetchedTitle = "";
         let titleTag = "";
@@ -298,7 +300,7 @@ export default function App() {
           if (shouldTryAiForText) {
             tasks.push(
               (async () => {
-                const generated = await generateTitleFromText({
+                const { title: generated } = await generateTitleFromTextDetailed({
                   text: trimmedText,
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
@@ -316,7 +318,7 @@ export default function App() {
           if (shouldTryAiForDesc) {
             tasks.push(
               (async () => {
-                const generated = await generateTitleFromText({
+                const { title: generated } = await generateTitleFromTextDetailed({
                   text: description,
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
@@ -341,11 +343,27 @@ export default function App() {
           }
         } else if (hasText) {
           // No shared title, text-driven (previous logic) - generate both AIs in parallel
+          let textAiError: string | null = null;
+          let descAiError: string | null = null;
+          let immediateAiError: string | null = null;
+          if (aiProvider !== "none" && !canUseAi) {
+            if (aiProvider === "windowAi" && !windowAiAvailable) {
+              immediateAiError = "ブラウザAIが利用できません";
+            } else if (aiProvider === "openRouter") {
+              if (!openRouterApiKey.trim()) {
+                immediateAiError = "APIキーが未設定です";
+              } else if (!savedOpenRouterModel.trim()) {
+                immediateAiError = "モデルが未設定です";
+              } else {
+                immediateAiError = "AIが利用できません";
+              }
+            }
+          }
           const tasks: Array<Promise<void>> = [];
           if (shouldTryAiForText) {
             tasks.push(
               (async () => {
-                const generated = await generateTitleFromText({
+                const { title: generated, error } = await generateTitleFromTextDetailed({
                   text: trimmedText,
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
@@ -354,13 +372,14 @@ export default function App() {
                   customPrompt: aiCustomPrompt,
                 });
                 if (generated) aiFromText = generated;
+                else if (error) textAiError = error;
               })(),
             );
           }
           if (shouldTryAiForDesc) {
             tasks.push(
               (async () => {
-                const generated = await generateTitleFromText({
+                const { title: generated, error } = await generateTitleFromTextDetailed({
                   text: description,
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
@@ -369,6 +388,8 @@ export default function App() {
                   customPrompt: aiCustomPrompt,
                 });
                 if (generated) aiFromDesc = generated;
+                else if (error) descAiError = error;
+                void descAiError;
               })(),
             );
           }
@@ -386,6 +407,15 @@ export default function App() {
             rawTitle = aiFromText;
           } else {
             rawTitle = truncateTitle(trimmedText);
+            if (immediateAiError) {
+              setAiTitleError(immediateAiError);
+            } else if (textAiError) {
+              setAiTitleError(textAiError);
+            } else if (shouldTryAiForText) {
+              setAiTitleError("AIタイトル生成に失敗しました");
+            } else if (aiProvider !== "none") {
+              setAiTitleError("AIタイトル生成に失敗しました");
+            }
           }
           const fetchCands = buildFetchCandidates().filter((c) => c.value !== rawTitle);
           candidates = [...fetchCands];
@@ -414,10 +444,25 @@ export default function App() {
           setTitleCandidates(candidates);
         } else {
           // URL only (or sharedTitle already handled) - try AI from description
+          let descAiErrorForUrl: string | null = null;
+          let immediateAiErrorForUrl: string | null = null;
+          if (aiProvider !== "none" && !canUseAi && description) {
+            if (aiProvider === "windowAi" && !windowAiAvailable) {
+              immediateAiErrorForUrl = "ブラウザAIが利用できません";
+            } else if (aiProvider === "openRouter") {
+              if (!openRouterApiKey.trim()) {
+                immediateAiErrorForUrl = "APIキーが未設定です";
+              } else if (!savedOpenRouterModel.trim()) {
+                immediateAiErrorForUrl = "モデルが未設定です";
+              } else {
+                immediateAiErrorForUrl = "AIが利用できません";
+              }
+            }
+          }
           if (shouldTryAiForDesc) {
             setCandidateAiLoading(true);
             try {
-              const generated = await generateTitleFromText({
+              const { title: generated, error } = await generateTitleFromTextDetailed({
                 text: description,
                 url: pageUrl,
                 aiProvider,
@@ -426,6 +471,7 @@ export default function App() {
                 customPrompt: aiCustomPrompt,
               });
               if (generated) aiFromDesc = generated;
+              else if (error) descAiErrorForUrl = error;
             } finally {
               setCandidateAiLoading(false);
             }
@@ -442,6 +488,17 @@ export default function App() {
             candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
             // Still add AI from description as candidate if it was generated but not default? handled above
             // For URL only, aiFromDesc is the AI, already handled as default, so no extra
+            if (description) {
+              if (immediateAiErrorForUrl) {
+                setAiTitleError(immediateAiErrorForUrl);
+              } else if (descAiErrorForUrl) {
+                setAiTitleError(descAiErrorForUrl);
+              } else if (shouldTryAiForDesc) {
+                setAiTitleError("AIタイトル生成に失敗しました");
+              } else if (aiProvider !== "none" && !canUseAi) {
+                setAiTitleError(immediateAiErrorForUrl ?? "AIタイトル生成に失敗しました");
+              }
+            }
           }
           setTitleCandidates(candidates);
           // Also add AI from description as candidate when it is not the default? already handled
@@ -619,6 +676,7 @@ export default function App() {
       setGeneratedBody(null);
       setAiSuggestedProject(null);
       setAiSelectError(null);
+      setAiTitleError(null);
       setPageExists(null);
       setCheckingExists(false);
       setError(null);
@@ -1002,6 +1060,7 @@ export default function App() {
     async (newTitle: string) => {
       setTitle(newTitle);
       setCopied(false);
+      setAiTitleError(null);
       const trimmed = newTitle.trim();
       if (!trimmed) {
         setTitleSourceLabel(null);
@@ -1088,6 +1147,7 @@ export default function App() {
     setSelectedProject(null);
     setAiSuggestedProject(null);
     setAiSelectError(null);
+    setAiTitleError(null);
     setPageExists(null);
     setCheckingExists(false);
     setError(null);
@@ -1394,6 +1454,11 @@ export default function App() {
                     autoComplete="off"
                     spellCheck={false}
                   />
+                  {aiTitleError && (
+                    <p className="share-warning" role="alert">
+                      AIタイトル生成に失敗しました（{aiTitleError}）。テキスト冒頭を使用しています
+                    </p>
+                  )}
                 </div>
               )}
 
