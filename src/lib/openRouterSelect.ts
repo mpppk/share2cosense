@@ -77,6 +77,34 @@ async function postOpenRouterChat(
 
 /**
  * Run a single prompt against OpenRouter's chat completions API.
+ * Returns the reply text with a human-readable error reason on failure.
+ */
+export async function promptOpenRouterDetailed(
+  systemPrompt: string,
+  prompt: string,
+  apiKey: string,
+  model: string,
+  timeoutMs: number,
+): Promise<{ content: string | null; error?: string }> {
+  if (!apiKey.trim()) {
+    return { content: null, error: "APIキーが未設定です" };
+  }
+  if (!model.trim()) {
+    return { content: null, error: "モデルが未設定です" };
+  }
+
+  return postOpenRouterChatDetailed(apiKey, timeoutMs, {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2,
+  });
+}
+
+/**
+ * Run a single prompt against OpenRouter's chat completions API.
  * Returns null when the key/model is missing, the request fails, or it times out.
  */
 export async function promptOpenRouter(

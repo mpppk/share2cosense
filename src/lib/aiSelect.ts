@@ -124,7 +124,7 @@ export type BrowserAiResult = { text: string | null; error?: string };
  * Run a single prompt against the browser's on-device Prompt API.
  * Returns the reply text, or null with a human-readable error reason.
  */
-async function promptBrowserAiDetailed(
+export async function promptBrowserAiDetailed(
   systemPrompt: string,
   prompt: string,
   timeoutMs: number,

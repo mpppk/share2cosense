@@ -1,6 +1,6 @@
-import { promptBrowserAi } from "./aiSelect";
+import { promptBrowserAiDetailed } from "./aiSelect";
 import type { AiProvider } from "./db";
-import { promptOpenRouter } from "./openRouterSelect";
+import { promptOpenRouterDetailed } from "./openRouterSelect";
 import { X_TITLE_MAX_LENGTH, truncateTitle } from "./xPost";
 
 /**
@@ -82,6 +82,63 @@ function parseTitle(raw: string): string | null {
   }
 }
 
+export type GenerateTitleResult = { title: string | null; error?: string };
+
+export async function generateTitleFromTextDetailed(options: {
+  text: string;
+  url: string | null;
+  aiProvider: AiProvider;
+  openRouterApiKey: string;
+  openRouterModel: string;
+  customPrompt?: string;
+}): Promise<GenerateTitleResult> {
+  const { text, url, aiProvider, openRouterApiKey, openRouterModel, customPrompt } = options;
+
+  const source = text.trim();
+  if (!source) {
+    return { title: null };
+  }
+
+  if (aiProvider === "none") {
+    return { title: null, error: "AIが無効です" };
+  }
+
+  const prompt = buildPrompt(source, url, customPrompt);
+  let raw: string | null = null;
+  let providerError: string | undefined;
+
+  if (aiProvider === "openRouter") {
+    const { content, error } = await promptOpenRouterDetailed(
+      SYSTEM_PROMPT,
+      prompt,
+      openRouterApiKey,
+      openRouterModel,
+      TIMEOUT_MS,
+    );
+    raw = content;
+    providerError = error;
+  } else if (aiProvider === "windowAi") {
+    const { text: content, error } = await promptBrowserAiDetailed(
+      SYSTEM_PROMPT,
+      prompt,
+      TIMEOUT_MS,
+    );
+    raw = content;
+    providerError = error;
+  } else {
+    return { title: null, error: "AIが無効です" };
+  }
+
+  if (!raw) {
+    return { title: null, error: providerError ?? "AIの応答がありませんでした" };
+  }
+  const parsed = parseTitle(raw);
+  if (!parsed) {
+    return { title: null, error: "AIの応答を解釈できませんでした" };
+  }
+  return { title: parsed };
+}
+
 export async function generateTitleFromText(options: {
   text: string;
   url: string | null;
@@ -90,30 +147,6 @@ export async function generateTitleFromText(options: {
   openRouterModel: string;
   customPrompt?: string;
 }): Promise<string | null> {
-  const { text, url, aiProvider, openRouterApiKey, openRouterModel, customPrompt } = options;
-
-  const source = text.trim();
-  if (!source) {
-    return null;
-  }
-
-  const prompt = buildPrompt(source, url, customPrompt);
-  let raw: string | null = null;
-
-  if (aiProvider === "openRouter") {
-    raw = await promptOpenRouter(
-      SYSTEM_PROMPT,
-      prompt,
-      openRouterApiKey,
-      openRouterModel,
-      TIMEOUT_MS,
-    );
-  } else if (aiProvider === "windowAi") {
-    raw = await promptBrowserAi(SYSTEM_PROMPT, prompt, TIMEOUT_MS);
-  }
-
-  if (!raw) {
-    return null;
-  }
-  return parseTitle(raw);
+  const { title } = await generateTitleFromTextDetailed(options);
+  return title;
 }
