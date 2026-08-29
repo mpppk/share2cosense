@@ -370,11 +370,7 @@ export default function App() {
               setCheckingExists(true);
               void (async () => {
                 try {
-                  const exists = await checkPageExists(
-                    projectImmed,
-                    immediateFinalTitle,
-                    true,
-                  );
+                  const exists = await checkPageExists(projectImmed, immediateFinalTitle, true);
                   if (isCancelled()) return;
                   setPageExists(exists);
                 } finally {
@@ -441,13 +437,12 @@ export default function App() {
               if (!openRouterApiKey.trim()) {
                 if (!isCancelled()) setAiSelectError("APIキーが未設定です");
               } else {
-                const { project: orProject, error: orError } =
-                  await selectProjectWithOpenRouter(
-                    projects,
-                    immediateRawTitle,
-                    openRouterApiKey,
-                    savedOpenRouterModel,
-                  );
+                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                  projects,
+                  immediateRawTitle,
+                  openRouterApiKey,
+                  savedOpenRouterModel,
+                );
                 if (isCancelled()) return;
                 if (orProject) {
                   project = orProject;
@@ -546,11 +541,7 @@ export default function App() {
               setCheckingExists(true);
               void (async () => {
                 try {
-                  const exists = await checkPageExists(
-                    projectImmed,
-                    immediateFinalTitle,
-                    true,
-                  );
+                  const exists = await checkPageExists(projectImmed, immediateFinalTitle, true);
                   if (isCancelled()) return;
                   setPageExists(exists);
                 } finally {
@@ -605,7 +596,7 @@ export default function App() {
           if (shouldTryAiForDesc) {
             tasks.push(
               (async () => {
-                const { title: generated, error } = await generateTitleFromTextDetailed({
+                const { title: generated } = await generateTitleFromTextDetailed({
                   text: description,
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
@@ -652,9 +643,7 @@ export default function App() {
               setAiTitleError("AIタイトル生成に失敗しました");
             }
           }
-          const finalFetchCands = buildFetchCandidates().filter(
-            (c) => c.value !== finalRawTitle,
-          );
+          const finalFetchCands = buildFetchCandidates().filter((c) => c.value !== finalRawTitle);
           let finalCandidates: Array<{ label: string; value: string }> = [...finalFetchCands];
           if (!finalCandidates.some((c) => c.value === finalRawTitle)) {
             finalCandidates.push({
@@ -721,13 +710,12 @@ export default function App() {
             if (!openRouterApiKey.trim()) {
               if (!isCancelled()) setAiSelectError("APIキーが未設定です");
             } else {
-              const { project: orProject, error: orError } =
-                await selectProjectWithOpenRouter(
-                  projects,
-                  targetRawTitle,
-                  openRouterApiKey,
-                  savedOpenRouterModel,
-                );
+              const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                projects,
+                targetRawTitle,
+                openRouterApiKey,
+                savedOpenRouterModel,
+              );
               if (isCancelled()) return;
               if (orProject) {
                 project = orProject;
@@ -759,8 +747,7 @@ export default function App() {
           ) {
             // タイトルがユーザーに変更されていない場合のみURLも更新する
             const shouldUpdateUrl =
-              titleRef.current === effectiveFinalTitle ||
-              titleRef.current === immediateFinalTitle;
+              titleRef.current === effectiveFinalTitle || titleRef.current === immediateFinalTitle;
             if (shouldUpdateUrl) {
               setSelectedProject(project);
               selectedProjectRef.current = project;
@@ -807,11 +794,7 @@ export default function App() {
           lastRawTitleRef.current = immediateRawTitle;
           setTitleSourceLabel(immediateTitleSource);
           setTextSourceLabel(
-            description
-              ? isXPostUrl(pageUrl)
-                ? "Xポスト本文"
-                : "ページの説明"
-              : null,
+            description ? (isXPostUrl(pageUrl) ? "Xポスト本文" : "ページの説明") : null,
           );
           setTextCandidates(textCands);
           setTitleCandidates(immediateCandidates);
@@ -844,11 +827,7 @@ export default function App() {
               setCheckingExists(true);
               void (async () => {
                 try {
-                  const exists = await checkPageExists(
-                    projectImmed,
-                    immediateFinalTitle,
-                    true,
-                  );
+                  const exists = await checkPageExists(projectImmed, immediateFinalTitle, true);
                   if (isCancelled()) return;
                   setPageExists(exists);
                 } finally {
@@ -905,9 +884,7 @@ export default function App() {
           if (aiFromDesc) {
             finalRawTitle = aiFromDesc;
             finalTitleSource = "AI生成（説明）";
-            finalCandidates = buildFetchCandidates().filter(
-              (c) => c.value !== finalRawTitle,
-            );
+            finalCandidates = buildFetchCandidates().filter((c) => c.value !== finalRawTitle);
             if (!finalCandidates.some((c) => c.value === finalRawTitle)) {
               finalCandidates.push({ label: "AI生成（説明）", value: finalRawTitle });
             }
@@ -916,9 +893,7 @@ export default function App() {
             if (titleTag && fetchedTitle === titleTag) finalTitleSource = "<title>";
             else if (ogTitle && fetchedTitle === ogTitle) finalTitleSource = "og:title";
             else finalTitleSource = "取得タイトル";
-            finalCandidates = buildFetchCandidates().filter(
-              (c) => c.value !== finalRawTitle,
-            );
+            finalCandidates = buildFetchCandidates().filter((c) => c.value !== finalRawTitle);
             if (description) {
               if (immediateAiErrorForUrl) {
                 setAiTitleError(immediateAiErrorForUrl);
@@ -971,13 +946,12 @@ export default function App() {
             if (!openRouterApiKey.trim()) {
               if (!isCancelled()) setAiSelectError("APIキーが未設定です");
             } else {
-              const { project: orProject, error: orError } =
-                await selectProjectWithOpenRouter(
-                  projects,
-                  targetRawTitle,
-                  openRouterApiKey,
-                  savedOpenRouterModel,
-                );
+              const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                projects,
+                targetRawTitle,
+                openRouterApiKey,
+                savedOpenRouterModel,
+              );
               if (isCancelled()) return;
               if (orProject) {
                 project = orProject;
@@ -1008,8 +982,7 @@ export default function App() {
             selectedProjectRef.current === projectImmed
           ) {
             const shouldUpdateUrl =
-              titleRef.current === effectiveFinalTitle ||
-              titleRef.current === immediateFinalTitle;
+              titleRef.current === effectiveFinalTitle || titleRef.current === immediateFinalTitle;
             if (shouldUpdateUrl) {
               setSelectedProject(project);
               selectedProjectRef.current = project;
@@ -1651,9 +1624,7 @@ export default function App() {
       <main className="share-container">
         {view === "generate" ? (
           <>
-            <div
-              className={`share-form${loading || candidateAiLoading ? " is-generating" : ""}`}
-            >
+            <div className={`share-form${loading || candidateAiLoading ? " is-generating" : ""}`}>
               {(loading || candidateAiLoading) && (
                 <ShineBorder
                   borderWidth={1}
