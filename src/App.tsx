@@ -140,6 +140,9 @@ export default function App() {
   const modelPresetsButtonRef = useRef<HTMLButtonElement>(null);
   const modelPresetsPopoverRef = useRef<HTMLDivElement>(null);
   const lastRawTitleRef = useRef("");
+  const generationIdRef = useRef(0);
+  const titleRef = useRef<string | null>(null);
+  const selectedProjectRef = useRef<string | null>(null);
   const [titleSourceLabel, setTitleSourceLabel] = useState<string | null>(null);
   const [textSourceLabel, setTextSourceLabel] = useState<string | null>(null);
 
@@ -197,6 +200,14 @@ export default function App() {
     refreshWindowAiAvailability();
   }, [loadProjects, refreshWindowAiAvailability]);
 
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+
+  useEffect(() => {
+    selectedProjectRef.current = selectedProject;
+  }, [selectedProject]);
+
   useEffect(
     () => () => {
       if (modelValidateTimerRef.current !== null) {
@@ -208,6 +219,8 @@ export default function App() {
 
   const generate = useCallback(
     async (rawUrl: string, rawText: string, rawSharedTitle?: string | null) => {
+      const genId = ++generationIdRef.current;
+      const isCancelled = () => genId !== generationIdRef.current;
       const trimmedUrl = rawUrl.trim();
       const trimmedText = truncateText(rawText.trim(), SHARED_TEXT_MAX_LENGTH);
       const sharedTitle = rawSharedTitle?.trim() ? truncateText(rawSharedTitle.trim(), 500) : "";
@@ -228,17 +241,19 @@ export default function App() {
       setShowTextCandidates(false);
       setAiSelectError(null);
       setAiTitleError(null);
+      setPageExists(null);
+      setCheckingExists(false);
       try {
         let fetchedTitle = "";
         let titleTag = "";
         let ogTitle = "";
         let description = "";
-        // share.google 等の短縮URLは転送先URLへ解決し、以降の処理でこちらを使う
         let pageUrl = trimmedUrl;
         if (hasUrl) {
           const source = await fetchTitleSource(trimmedUrl, {
             fallbackOpenRouterApiKey: allowOpenRouterFallbackModel ? openRouterApiKey : "",
           });
+          if (isCancelled()) return;
           fetchedTitle = source.title;
           titleTag = source.titleTag;
           ogTitle = source.ogTitle;
@@ -248,6 +263,7 @@ export default function App() {
             setInputUrl(pageUrl);
           }
         }
+        if (isCancelled()) return;
 
         const canUseAi =
           aiProvider !== "none" &&
@@ -258,11 +274,8 @@ export default function App() {
               : false);
         const shouldTryAiForText = hasText && canUseAi;
         const shouldTryAiForDesc = !!description && canUseAi && description !== trimmedText;
-        // 共有テキストからAI生成する場合でも <title>要素から決定したタイトルを優先する
-        // （Xポストの<title>は「Post」等の汎用文字列になるため除外）
         const preferTitleTag = hasUrl && !!titleTag && !isXPostUrl(pageUrl);
 
-        // Build candidates from fetch
         const buildFetchCandidates = (): Array<{ label: string; value: string }> => {
           const list: Array<{ label: string; value: string }> = [];
           if (titleTag) list.push({ label: "<title>", value: titleTag });
@@ -271,7 +284,6 @@ export default function App() {
             fetchedTitle &&
             fetchedTitle !== titleTag &&
             fetchedTitle !== ogTitle &&
-            // for X posts, fetchedTitle is derived from description
             !list.some((c) => c.value === fetchedTitle)
           ) {
             list.push({ label: "取得タイトル", value: fetchedTitle });
@@ -279,23 +291,98 @@ export default function App() {
           return list;
         };
 
-        let rawTitle: string;
-        let candidates: Array<{ label: string; value: string }> = [];
-        let aiFromText: string | null = null;
-        let aiFromDesc: string | null = null;
-
         const addAiCandidate = (label: string, value: string, skipRawValue?: string) => {
           if (!value || value === skipRawValue) return;
+          if (isCancelled()) return;
           setTitleCandidates((prev) => {
             if (prev.some((c) => c.value === value)) return prev;
             return [...prev, { label, value }];
           });
         };
 
+        const buildTextCandidates = (desc: string, defaultText: string) => {
+          const list: Array<{ label: string; value: string }> = [];
+          if (hasText) list.push({ label: "共有テキスト", value: trimmedText });
+          if (desc && desc !== trimmedText) {
+            list.push({
+              label: isXPostUrl(pageUrl) ? "Xポスト本文" : "ページの説明",
+              value: truncateText(desc, SHARED_TEXT_MAX_LENGTH),
+            });
+          }
+          return list.filter((c) => c.value !== defaultText);
+        };
+
         if (hasSharedTitle) {
-          rawTitle = sharedTitle;
-          candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
-          setTitleCandidates(candidates);
+          const immediateRawTitle = sharedTitle;
+          const immediateCandidates = buildFetchCandidates().filter(
+            (c) => c.value !== immediateRawTitle,
+          );
+          const immediateTitleSource = "共有タイトル";
+          const defaultText = hasText
+            ? trimmedText
+            : truncateText(description, SHARED_TEXT_MAX_LENGTH);
+          const textCands = buildTextCandidates(description, defaultText);
+          const immediateBody = buildBody(bodyTemplate, pageUrl, defaultText, immediateRawTitle);
+          const immediateFinalTitle = `${titlePrefix}${immediateRawTitle}`;
+
+          if (!hasText && description) {
+            setInputText(defaultText);
+          }
+          lastRawTitleRef.current = immediateRawTitle;
+          setTitleSourceLabel(immediateTitleSource);
+          setTextSourceLabel(
+            hasText
+              ? "共有テキスト"
+              : description
+                ? isXPostUrl(pageUrl)
+                  ? "Xポスト本文"
+                  : "ページの説明"
+                : null,
+          );
+          setTextCandidates(textCands);
+          setTitleCandidates(immediateCandidates);
+
+          let projectImmed = defaultProject || projects[0]?.name || "";
+          if (projects.length === 0 || !projectImmed) {
+            setTitle(immediateFinalTitle);
+            titleRef.current = immediateFinalTitle;
+            setGeneratedBody(immediateBody);
+            setSelectedProject(null);
+            selectedProjectRef.current = null;
+            setAiSuggestedProject(null);
+            setPageExists(null);
+            setCosenseUrl(null);
+            setLastFetchedUrl(hasUrl ? pageUrl : "");
+            setLastFetchedText(trimmedText);
+          } else {
+            setTitle(immediateFinalTitle);
+            titleRef.current = immediateFinalTitle;
+            setGeneratedBody(immediateBody);
+            setSelectedProject(projectImmed);
+            selectedProjectRef.current = projectImmed;
+            const urlImmed = buildCosenseUrl(projectImmed, immediateFinalTitle, immediateBody);
+            setCosenseUrl(urlImmed);
+            setAiSuggestedProject(null);
+            setLastFetchedUrl(hasUrl ? pageUrl : "");
+            setLastFetchedText(trimmedText);
+            const projDataImmed = projects.find((p) => p.name === projectImmed);
+            if (projDataImmed?.isPublic) {
+              setCheckingExists(true);
+              void (async () => {
+                try {
+                  const exists = await checkPageExists(projectImmed, immediateFinalTitle, true);
+                  if (isCancelled()) return;
+                  setPageExists(exists);
+                } finally {
+                  if (!isCancelled()) setCheckingExists(false);
+                }
+              })();
+            } else {
+              setPageExists(null);
+            }
+          }
+          setLoading(false);
+
           const tasks: Array<Promise<void>> = [];
           if (shouldTryAiForText) {
             tasks.push(
@@ -308,9 +395,9 @@ export default function App() {
                   openRouterModel: savedOpenRouterModel,
                   customPrompt: aiCustomPrompt,
                 });
-                if (generated && generated !== rawTitle) {
-                  aiFromText = generated;
-                  addAiCandidate("AI生成（テキスト）", generated, rawTitle);
+                if (isCancelled()) return;
+                if (generated && generated !== immediateRawTitle) {
+                  addAiCandidate("AI生成（テキスト）", generated, immediateRawTitle);
                 }
               })(),
             );
@@ -326,9 +413,9 @@ export default function App() {
                   openRouterModel: savedOpenRouterModel,
                   customPrompt: aiCustomPrompt,
                 });
-                if (generated && generated !== rawTitle) {
-                  aiFromDesc = generated;
-                  addAiCandidate("AI生成（説明）", generated, rawTitle);
+                if (isCancelled()) return;
+                if (generated && generated !== immediateRawTitle) {
+                  addAiCandidate("AI生成（説明）", generated, immediateRawTitle);
                 }
               })(),
             );
@@ -338,13 +425,136 @@ export default function App() {
             try {
               await Promise.all(tasks);
             } finally {
-              setCandidateAiLoading(false);
+              if (!isCancelled()) setCandidateAiLoading(false);
+            }
+            if (isCancelled()) return;
+          }
+
+          if (projects.length > 0 && projectImmed) {
+            let project = projectImmed;
+            let aiResult: string | null = null;
+            if (aiProvider === "openRouter") {
+              if (!openRouterApiKey.trim()) {
+                if (!isCancelled()) setAiSelectError("APIキーが未設定です");
+              } else {
+                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                  projects,
+                  immediateRawTitle,
+                  openRouterApiKey,
+                  savedOpenRouterModel,
+                );
+                if (isCancelled()) return;
+                if (orProject) {
+                  project = orProject;
+                  aiResult = orProject;
+                } else if (orError) {
+                  setAiSelectError(orError);
+                }
+              }
+            } else if (aiProvider === "windowAi") {
+              const { project: aiProject, error: aiError } = await selectProjectWithAi(
+                projects,
+                immediateRawTitle,
+              );
+              if (isCancelled()) return;
+              if (aiProject) {
+                project = aiProject;
+                aiResult = aiProject;
+              } else if (aiError) {
+                setAiSelectError(aiError);
+              }
+            }
+            if (isCancelled()) return;
+            if (project !== projectImmed && selectedProjectRef.current === projectImmed) {
+              setSelectedProject(project);
+              selectedProjectRef.current = project;
+              const newUrl = buildCosenseUrl(project, immediateFinalTitle, immediateBody);
+              setCosenseUrl(newUrl);
+              const projData = projects.find((p) => p.name === project);
+              if (projData?.isPublic) {
+                setCheckingExists(true);
+                try {
+                  const exists = await checkPageExists(project, immediateFinalTitle, true);
+                  if (isCancelled()) return;
+                  setPageExists(exists);
+                } finally {
+                  if (!isCancelled()) setCheckingExists(false);
+                }
+              } else {
+                setPageExists(null);
+              }
+            }
+            setAiSuggestedProject(aiResult);
+          }
+          return;
+        } else if (hasText) {
+          const immediateRawTitle = preferTitleTag ? titleTag : truncateTitle(trimmedText);
+          const immediateTitleSource = preferTitleTag ? "<title>" : "テキスト冒頭";
+          const fetchCandsForImmed = buildFetchCandidates().filter(
+            (c) => c.value !== immediateRawTitle,
+          );
+          const immediateCandidates: Array<{ label: string; value: string }> = [
+            ...fetchCandsForImmed,
+          ];
+          if (!immediateCandidates.some((c) => c.value === immediateRawTitle)) {
+            immediateCandidates.push({
+              label: immediateTitleSource,
+              value: immediateRawTitle,
+            });
+          }
+          const defaultText = trimmedText;
+          const textCands = buildTextCandidates(description, defaultText);
+          const immediateBody = buildBody(bodyTemplate, pageUrl, defaultText, immediateRawTitle);
+          const immediateFinalTitle = `${titlePrefix}${immediateRawTitle}`;
+
+          lastRawTitleRef.current = immediateRawTitle;
+          setTitleSourceLabel(immediateTitleSource);
+          setTextSourceLabel("共有テキスト");
+          setTextCandidates(textCands);
+          setTitleCandidates(immediateCandidates);
+
+          let projectImmed = defaultProject || projects[0]?.name || "";
+          if (projects.length === 0 || !projectImmed) {
+            setTitle(immediateFinalTitle);
+            titleRef.current = immediateFinalTitle;
+            setGeneratedBody(immediateBody);
+            setSelectedProject(null);
+            selectedProjectRef.current = null;
+            setAiSuggestedProject(null);
+            setPageExists(null);
+            setCosenseUrl(null);
+            setLastFetchedUrl(hasUrl ? pageUrl : "");
+            setLastFetchedText(trimmedText);
+          } else {
+            setTitle(immediateFinalTitle);
+            titleRef.current = immediateFinalTitle;
+            setGeneratedBody(immediateBody);
+            setSelectedProject(projectImmed);
+            selectedProjectRef.current = projectImmed;
+            const urlImmed = buildCosenseUrl(projectImmed, immediateFinalTitle, immediateBody);
+            setCosenseUrl(urlImmed);
+            setAiSuggestedProject(null);
+            setLastFetchedUrl(hasUrl ? pageUrl : "");
+            setLastFetchedText(trimmedText);
+            const projDataImmed = projects.find((p) => p.name === projectImmed);
+            if (projDataImmed?.isPublic) {
+              setCheckingExists(true);
+              void (async () => {
+                try {
+                  const exists = await checkPageExists(projectImmed, immediateFinalTitle, true);
+                  if (isCancelled()) return;
+                  setPageExists(exists);
+                } finally {
+                  if (!isCancelled()) setCheckingExists(false);
+                }
+              })();
+            } else {
+              setPageExists(null);
             }
           }
-        } else if (hasText) {
-          // No shared title, text-driven (previous logic) - generate both AIs in parallel
+          setLoading(false);
+
           let textAiError: string | null = null;
-          let descAiError: string | null = null;
           let immediateAiError: string | null = null;
           if (aiProvider !== "none" && !canUseAi) {
             if (aiProvider === "windowAi" && !windowAiAvailable) {
@@ -359,6 +569,8 @@ export default function App() {
               }
             }
           }
+          let aiFromText: string | null = null;
+          let aiFromDesc: string | null = null;
           const tasks: Array<Promise<void>> = [];
           if (shouldTryAiForText) {
             tasks.push(
@@ -371,15 +583,20 @@ export default function App() {
                   openRouterModel: savedOpenRouterModel,
                   customPrompt: aiCustomPrompt,
                 });
-                if (generated) aiFromText = generated;
-                else if (error) textAiError = error;
+                if (isCancelled()) return;
+                if (generated) {
+                  aiFromText = generated;
+                  addAiCandidate("AI生成（テキスト）", generated, immediateRawTitle);
+                } else if (error) {
+                  textAiError = error;
+                }
               })(),
             );
           }
           if (shouldTryAiForDesc) {
             tasks.push(
               (async () => {
-                const { title: generated, error } = await generateTitleFromTextDetailed({
+                const { title: generated } = await generateTitleFromTextDetailed({
                   text: description,
                   url: hasUrl ? pageUrl : null,
                   aiProvider,
@@ -387,9 +604,11 @@ export default function App() {
                   openRouterModel: savedOpenRouterModel,
                   customPrompt: aiCustomPrompt,
                 });
-                if (generated) aiFromDesc = generated;
-                else if (error) descAiError = error;
-                void descAiError;
+                if (isCancelled()) return;
+                if (generated) {
+                  aiFromDesc = generated;
+                  addAiCandidate("AI生成（説明）", generated, immediateRawTitle);
+                }
               })(),
             );
           }
@@ -398,15 +617,22 @@ export default function App() {
             try {
               await Promise.all(tasks);
             } finally {
-              setCandidateAiLoading(false);
+              if (!isCancelled()) setCandidateAiLoading(false);
             }
+            if (isCancelled()) return;
           }
+
+          let finalRawTitle: string;
+          let finalTitleSource: string | null;
           if (preferTitleTag) {
-            rawTitle = titleTag;
+            finalRawTitle = titleTag;
+            finalTitleSource = "<title>";
           } else if (aiFromText) {
-            rawTitle = aiFromText;
+            finalRawTitle = aiFromText;
+            finalTitleSource = "AI生成（テキスト）";
           } else {
-            rawTitle = truncateTitle(trimmedText);
+            finalRawTitle = truncateTitle(trimmedText);
+            finalTitleSource = "テキスト冒頭";
             if (immediateAiError) {
               setAiTitleError(immediateAiError);
             } else if (textAiError) {
@@ -417,33 +643,203 @@ export default function App() {
               setAiTitleError("AIタイトル生成に失敗しました");
             }
           }
-          const fetchCands = buildFetchCandidates().filter((c) => c.value !== rawTitle);
-          candidates = [...fetchCands];
-          // デフォルトタイトルも候補に含める（別の候補へ切り替えた後に戻せなくなるのを防ぐ）
-          if (!candidates.some((c) => c.value === rawTitle)) {
-            candidates.push({
+          const finalFetchCands = buildFetchCandidates().filter((c) => c.value !== finalRawTitle);
+          let finalCandidates: Array<{ label: string; value: string }> = [...finalFetchCands];
+          if (!finalCandidates.some((c) => c.value === finalRawTitle)) {
+            finalCandidates.push({
               label: preferTitleTag
                 ? "<title>"
                 : aiFromText
                   ? "AI生成（テキスト）"
                   : "テキスト冒頭",
-              value: rawTitle,
+              value: finalRawTitle,
             });
           }
-          // AI生成（テキスト）はデフォルトでない場合も候補に残す
-          if (aiFromText && !candidates.some((c) => c.value === aiFromText)) {
-            candidates.push({ label: "AI生成（テキスト）", value: aiFromText });
+          if (aiFromText && !finalCandidates.some((c) => c.value === aiFromText)) {
+            finalCandidates.push({ label: "AI生成（テキスト）", value: aiFromText });
           }
           if (
             aiFromDesc &&
-            aiFromDesc !== rawTitle &&
-            !candidates.some((c) => c.value === aiFromDesc)
+            aiFromDesc !== finalRawTitle &&
+            !finalCandidates.some((c) => c.value === aiFromDesc)
           ) {
-            candidates.push({ label: "AI生成（説明）", value: aiFromDesc });
+            finalCandidates.push({ label: "AI生成（説明）", value: aiFromDesc });
           }
-          setTitleCandidates(candidates);
+          if (isCancelled()) return;
+          setTitleCandidates(finalCandidates);
+
+          if (finalRawTitle !== immediateRawTitle) {
+            if (titleRef.current === immediateFinalTitle) {
+              const newFinalTitle = `${titlePrefix}${finalRawTitle}`;
+              const newBody = buildBody(bodyTemplate, pageUrl, defaultText, finalRawTitle);
+              lastRawTitleRef.current = finalRawTitle;
+              setTitleSourceLabel(finalTitleSource);
+              setTitle(newFinalTitle);
+              titleRef.current = newFinalTitle;
+              setGeneratedBody(newBody);
+              if (projects.length > 0 && projectImmed) {
+                const urlWithFinal = buildCosenseUrl(projectImmed, newFinalTitle, newBody);
+                setCosenseUrl(urlWithFinal);
+                const projData = projects.find((p) => p.name === projectImmed);
+                if (projData?.isPublic) {
+                  setCheckingExists(true);
+                  void (async () => {
+                    try {
+                      const exists = await checkPageExists(projectImmed, newFinalTitle, true);
+                      if (isCancelled()) return;
+                      setPageExists(exists);
+                    } finally {
+                      if (!isCancelled()) setCheckingExists(false);
+                    }
+                  })();
+                }
+              }
+            } else {
+              // ユーザーがタイトルを手動編集した場合は自動更新しないが、候補だけは更新済み
+              lastRawTitleRef.current = finalRawTitle;
+            }
+          }
+
+          if (projects.length === 0 || !projectImmed) {
+            return;
+          }
+          let project = projectImmed;
+          let aiResult: string | null = null;
+          const targetRawTitle = finalRawTitle;
+          if (aiProvider === "openRouter") {
+            if (!openRouterApiKey.trim()) {
+              if (!isCancelled()) setAiSelectError("APIキーが未設定です");
+            } else {
+              const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                projects,
+                targetRawTitle,
+                openRouterApiKey,
+                savedOpenRouterModel,
+              );
+              if (isCancelled()) return;
+              if (orProject) {
+                project = orProject;
+                aiResult = orProject;
+              } else if (orError) {
+                setAiSelectError(orError);
+              }
+            }
+          } else if (aiProvider === "windowAi") {
+            const { project: aiProject, error: aiError } = await selectProjectWithAi(
+              projects,
+              targetRawTitle,
+            );
+            if (isCancelled()) return;
+            if (aiProject) {
+              project = aiProject;
+              aiResult = aiProject;
+            } else if (aiError) {
+              setAiSelectError(aiError);
+            }
+          }
+          if (isCancelled()) return;
+          const effectiveFinalTitle = `${titlePrefix}${finalRawTitle}`;
+          const effectiveBody = buildBody(bodyTemplate, pageUrl, defaultText, finalRawTitle);
+          if (!isCancelled()) setGeneratedBody(effectiveBody);
+          if (
+            (project !== projectImmed || finalRawTitle !== immediateRawTitle) &&
+            selectedProjectRef.current === projectImmed
+          ) {
+            // タイトルがユーザーに変更されていない場合のみURLも更新する
+            const shouldUpdateUrl =
+              titleRef.current === effectiveFinalTitle || titleRef.current === immediateFinalTitle;
+            if (shouldUpdateUrl) {
+              setSelectedProject(project);
+              selectedProjectRef.current = project;
+              const newUrl = buildCosenseUrl(project, effectiveFinalTitle, effectiveBody);
+              setCosenseUrl(newUrl);
+              const projData = projects.find((p) => p.name === project);
+              if (projData?.isPublic) {
+                setCheckingExists(true);
+                try {
+                  const exists = await checkPageExists(project, effectiveFinalTitle, true);
+                  if (isCancelled()) return;
+                  setPageExists(exists);
+                } finally {
+                  if (!isCancelled()) setCheckingExists(false);
+                }
+              } else {
+                setPageExists(null);
+              }
+            } else {
+              // タイトルが手動編集されている場合はプロジェクト候補のみ更新し、URLは据え置き
+              setAiSuggestedProject(aiResult);
+              return;
+            }
+          }
+          setAiSuggestedProject(aiResult);
+          return;
         } else {
-          // URL only (or sharedTitle already handled) - try AI from description
+          const immediateRawTitle = fetchedTitle;
+          let immediateTitleSource: string | null;
+          if (titleTag && fetchedTitle === titleTag) immediateTitleSource = "<title>";
+          else if (ogTitle && fetchedTitle === ogTitle) immediateTitleSource = "og:title";
+          else immediateTitleSource = "取得タイトル";
+          const immediateCandidates = buildFetchCandidates().filter(
+            (c) => c.value !== immediateRawTitle,
+          );
+          const defaultText = truncateText(description, SHARED_TEXT_MAX_LENGTH);
+          const textCands = buildTextCandidates(description, defaultText);
+          const immediateBody = buildBody(bodyTemplate, pageUrl, defaultText, immediateRawTitle);
+          const immediateFinalTitle = `${titlePrefix}${immediateRawTitle}`;
+
+          if (!hasText && description) {
+            setInputText(defaultText);
+          }
+          lastRawTitleRef.current = immediateRawTitle;
+          setTitleSourceLabel(immediateTitleSource);
+          setTextSourceLabel(
+            description ? (isXPostUrl(pageUrl) ? "Xポスト本文" : "ページの説明") : null,
+          );
+          setTextCandidates(textCands);
+          setTitleCandidates(immediateCandidates);
+
+          let projectImmed = defaultProject || projects[0]?.name || "";
+          if (projects.length === 0 || !projectImmed) {
+            setTitle(immediateFinalTitle);
+            titleRef.current = immediateFinalTitle;
+            setGeneratedBody(immediateBody);
+            setSelectedProject(null);
+            selectedProjectRef.current = null;
+            setAiSuggestedProject(null);
+            setPageExists(null);
+            setCosenseUrl(null);
+            setLastFetchedUrl(hasUrl ? pageUrl : "");
+            setLastFetchedText(trimmedText);
+          } else {
+            setTitle(immediateFinalTitle);
+            titleRef.current = immediateFinalTitle;
+            setGeneratedBody(immediateBody);
+            setSelectedProject(projectImmed);
+            selectedProjectRef.current = projectImmed;
+            const urlImmed = buildCosenseUrl(projectImmed, immediateFinalTitle, immediateBody);
+            setCosenseUrl(urlImmed);
+            setAiSuggestedProject(null);
+            setLastFetchedUrl(hasUrl ? pageUrl : "");
+            setLastFetchedText(trimmedText);
+            const projDataImmed = projects.find((p) => p.name === projectImmed);
+            if (projDataImmed?.isPublic) {
+              setCheckingExists(true);
+              void (async () => {
+                try {
+                  const exists = await checkPageExists(projectImmed, immediateFinalTitle, true);
+                  if (isCancelled()) return;
+                  setPageExists(exists);
+                } finally {
+                  if (!isCancelled()) setCheckingExists(false);
+                }
+              })();
+            } else {
+              setPageExists(null);
+            }
+          }
+          setLoading(false);
+
           let descAiErrorForUrl: string | null = null;
           let immediateAiErrorForUrl: string | null = null;
           if (aiProvider !== "none" && !canUseAi && description) {
@@ -459,6 +855,7 @@ export default function App() {
               }
             }
           }
+          let aiFromDesc: string | null = null;
           if (shouldTryAiForDesc) {
             setCandidateAiLoading(true);
             try {
@@ -470,24 +867,33 @@ export default function App() {
                 openRouterModel: savedOpenRouterModel,
                 customPrompt: aiCustomPrompt,
               });
-              if (generated) aiFromDesc = generated;
-              else if (error) descAiErrorForUrl = error;
+              if (isCancelled()) return;
+              if (generated) {
+                aiFromDesc = generated;
+                addAiCandidate("AI生成（説明）", generated, immediateRawTitle);
+              } else if (error) descAiErrorForUrl = error;
             } finally {
-              setCandidateAiLoading(false);
+              if (!isCancelled()) setCandidateAiLoading(false);
             }
+            if (isCancelled()) return;
           }
+
+          let finalRawTitle: string;
+          let finalTitleSource: string | null;
+          let finalCandidates: Array<{ label: string; value: string }>;
           if (aiFromDesc) {
-            rawTitle = aiFromDesc;
-            candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
-            // デフォルトタイトルも候補に含める（別の候補へ切り替えた後に戻せなくなるのを防ぐ）
-            if (!candidates.some((c) => c.value === aiFromDesc)) {
-              candidates.push({ label: "AI生成（説明）", value: aiFromDesc });
+            finalRawTitle = aiFromDesc;
+            finalTitleSource = "AI生成（説明）";
+            finalCandidates = buildFetchCandidates().filter((c) => c.value !== finalRawTitle);
+            if (!finalCandidates.some((c) => c.value === finalRawTitle)) {
+              finalCandidates.push({ label: "AI生成（説明）", value: finalRawTitle });
             }
           } else {
-            rawTitle = fetchedTitle;
-            candidates = buildFetchCandidates().filter((c) => c.value !== rawTitle);
-            // Still add AI from description as candidate if it was generated but not default? handled above
-            // For URL only, aiFromDesc is the AI, already handled as default, so no extra
+            finalRawTitle = fetchedTitle;
+            if (titleTag && fetchedTitle === titleTag) finalTitleSource = "<title>";
+            else if (ogTitle && fetchedTitle === ogTitle) finalTitleSource = "og:title";
+            else finalTitleSource = "取得タイトル";
+            finalCandidates = buildFetchCandidates().filter((c) => c.value !== finalRawTitle);
             if (description) {
               if (immediateAiErrorForUrl) {
                 setAiTitleError(immediateAiErrorForUrl);
@@ -500,125 +906,117 @@ export default function App() {
               }
             }
           }
-          setTitleCandidates(candidates);
-          // Also add AI from description as candidate when it is not the default? already handled
-          // For URL only, if AI succeeded it is default, otherwise no AI candidate
-          // If we want to show AI(desc) as candidate even when default is sharedTitle, that's handled in hasSharedTitle branch
-        }
-        const finalTitle = `${titlePrefix}${rawTitle}`;
-        // 本文テキスト: 共有テキストを優先し、なければ取得した説明（Xのポスト本文）を使う
-        let titleSource: string | null;
-        if (hasSharedTitle) {
-          titleSource = "共有タイトル";
-        } else if (hasText) {
-          titleSource = preferTitleTag
-            ? "<title>"
-            : aiFromText
-              ? "AI生成（テキスト）"
-              : "テキスト冒頭";
-        } else if (aiFromDesc) {
-          titleSource = "AI生成（説明）";
-        } else if (titleTag && fetchedTitle === titleTag) {
-          titleSource = "<title>";
-        } else if (ogTitle && fetchedTitle === ogTitle) {
-          titleSource = "og:title";
-        } else {
-          titleSource = "取得タイトル";
-        }
-        const defaultText = hasText
-          ? trimmedText
-          : truncateText(description, SHARED_TEXT_MAX_LENGTH);
-        const textCands: Array<{ label: string; value: string }> = [];
-        if (hasText) {
-          textCands.push({ label: "共有テキスト", value: trimmedText });
-        }
-        if (description && description !== trimmedText) {
-          textCands.push({
-            label: isXPostUrl(pageUrl) ? "Xポスト本文" : "ページの説明",
-            value: truncateText(description, SHARED_TEXT_MAX_LENGTH),
-          });
-        }
-        setTextCandidates(textCands.filter((c) => c.value !== defaultText));
-        setTitleSourceLabel(titleSource);
-        setTextSourceLabel(
-          hasText
-            ? "共有テキスト"
-            : description
-              ? isXPostUrl(pageUrl)
-                ? "Xポスト本文"
-                : "ページの説明"
-              : null,
-        );
-        if (!hasText && description) {
-          setInputText(defaultText);
-        }
-        lastRawTitleRef.current = rawTitle;
-        const body = buildBody(bodyTemplate, pageUrl, defaultText, rawTitle);
-        let project = defaultProject || projects[0]?.name || "";
-        let aiResult: string | null = null;
-        if (projects.length === 0 || !project) {
-          setTitle(finalTitle);
-          setGeneratedBody(body);
-          setSelectedProject(null);
-          setAiSuggestedProject(null);
-          setPageExists(null);
-          setCosenseUrl(null);
-          setLastFetchedUrl(hasUrl ? pageUrl : "");
-          setLastFetchedText(trimmedText);
-          return;
-        }
-        if (aiProvider === "openRouter") {
-          if (!openRouterApiKey.trim()) {
-            setAiSelectError("APIキーが未設定です");
-          } else {
-            const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
-              projects,
-              rawTitle,
-              openRouterApiKey,
-              savedOpenRouterModel,
-            );
-            if (orProject) {
-              project = orProject;
-              aiResult = orProject;
-            } else if (orError) {
-              setAiSelectError(orError);
+          if (isCancelled()) return;
+          setTitleCandidates(finalCandidates);
+          if (finalRawTitle !== immediateRawTitle) {
+            if (titleRef.current === immediateFinalTitle) {
+              const newFinalTitle = `${titlePrefix}${finalRawTitle}`;
+              const newBody = buildBody(bodyTemplate, pageUrl, defaultText, finalRawTitle);
+              lastRawTitleRef.current = finalRawTitle;
+              setTitleSourceLabel(finalTitleSource);
+              setTitle(newFinalTitle);
+              titleRef.current = newFinalTitle;
+              setGeneratedBody(newBody);
+              if (projects.length > 0 && projectImmed) {
+                const urlWithFinal = buildCosenseUrl(projectImmed, newFinalTitle, newBody);
+                setCosenseUrl(urlWithFinal);
+                const projData = projects.find((p) => p.name === projectImmed);
+                if (projData?.isPublic) {
+                  setCheckingExists(true);
+                  void (async () => {
+                    try {
+                      const exists = await checkPageExists(projectImmed, newFinalTitle, true);
+                      if (isCancelled()) return;
+                      setPageExists(exists);
+                    } finally {
+                      if (!isCancelled()) setCheckingExists(false);
+                    }
+                  })();
+                }
+              }
+            } else {
+              lastRawTitleRef.current = finalRawTitle;
             }
           }
-        } else if (aiProvider === "windowAi") {
-          const { project: aiProject, error: aiError } = await selectProjectWithAi(
-            projects,
-            rawTitle,
-          );
-          if (aiProject) {
-            project = aiProject;
-            aiResult = aiProject;
-          } else if (aiError) {
-            setAiSelectError(aiError);
+          if (projects.length === 0 || !projectImmed) return;
+          let project = projectImmed;
+          let aiResult: string | null = null;
+          const targetRawTitle = finalRawTitle;
+          if (aiProvider === "openRouter") {
+            if (!openRouterApiKey.trim()) {
+              if (!isCancelled()) setAiSelectError("APIキーが未設定です");
+            } else {
+              const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                projects,
+                targetRawTitle,
+                openRouterApiKey,
+                savedOpenRouterModel,
+              );
+              if (isCancelled()) return;
+              if (orProject) {
+                project = orProject;
+                aiResult = orProject;
+              } else if (orError) {
+                setAiSelectError(orError);
+              }
+            }
+          } else if (aiProvider === "windowAi") {
+            const { project: aiProject, error: aiError } = await selectProjectWithAi(
+              projects,
+              targetRawTitle,
+            );
+            if (isCancelled()) return;
+            if (aiProject) {
+              project = aiProject;
+              aiResult = aiProject;
+            } else if (aiError) {
+              setAiSelectError(aiError);
+            }
           }
-        }
-        const selectedProjectData = projects.find((p) => p.name === project);
-        let exists: boolean | null = null;
-        if (selectedProjectData?.isPublic) {
-          setCheckingExists(true);
-          try {
-            exists = await checkPageExists(project, finalTitle, true);
-          } finally {
-            setCheckingExists(false);
+          if (isCancelled()) return;
+          const effectiveFinalTitle = `${titlePrefix}${finalRawTitle}`;
+          const effectiveBody = buildBody(bodyTemplate, pageUrl, defaultText, finalRawTitle);
+          if (!isCancelled()) setGeneratedBody(effectiveBody);
+          if (
+            (project !== projectImmed || finalRawTitle !== immediateRawTitle) &&
+            selectedProjectRef.current === projectImmed
+          ) {
+            const shouldUpdateUrl =
+              titleRef.current === effectiveFinalTitle || titleRef.current === immediateFinalTitle;
+            if (shouldUpdateUrl) {
+              setSelectedProject(project);
+              selectedProjectRef.current = project;
+              const newUrl = buildCosenseUrl(project, effectiveFinalTitle, effectiveBody);
+              setCosenseUrl(newUrl);
+              const projData = projects.find((p) => p.name === project);
+              if (projData?.isPublic) {
+                setCheckingExists(true);
+                try {
+                  const exists = await checkPageExists(project, effectiveFinalTitle, true);
+                  if (isCancelled()) return;
+                  setPageExists(exists);
+                } finally {
+                  if (!isCancelled()) setCheckingExists(false);
+                }
+              } else {
+                setPageExists(null);
+              }
+            } else {
+              setAiSuggestedProject(aiResult);
+              return;
+            }
           }
+          setAiSuggestedProject(aiResult);
+          return;
         }
-        setPageExists(exists);
-        const url = buildCosenseUrl(project, finalTitle, body);
-        setTitle(finalTitle);
-        setCosenseUrl(url);
-        setSelectedProject(project);
-        setGeneratedBody(body);
-        setAiSuggestedProject(aiResult);
-        setLastFetchedUrl(hasUrl ? pageUrl : "");
-        setLastFetchedText(trimmedText);
       } catch (e) {
+        if (isCancelled()) return;
         setError(e instanceof Error ? e.message : "タイトルの取得に失敗しました");
       } finally {
-        setLoading(false);
+        if (!isCancelled()) {
+          setLoading(false);
+          setCandidateAiLoading(false);
+        }
       }
     },
     [
@@ -1035,6 +1433,7 @@ export default function App() {
   const handleProjectChange = useCallback(
     async (newProject: string) => {
       setSelectedProject(newProject);
+      selectedProjectRef.current = newProject;
       setCopied(false);
       if (title && generatedBody) {
         const newUrl = buildCosenseUrl(newProject, title, generatedBody);
@@ -1059,6 +1458,7 @@ export default function App() {
   const handleTitleChange = useCallback(
     async (newTitle: string) => {
       setTitle(newTitle);
+      titleRef.current = newTitle;
       setCopied(false);
       setAiTitleError(null);
       const trimmed = newTitle.trim();
@@ -1089,6 +1489,7 @@ export default function App() {
           setGeneratedBody(fallbackBody);
           if (!selectedProject) {
             setSelectedProject(effectiveProject);
+            selectedProjectRef.current = effectiveProject;
           }
         }
         const projData = projects.find((p) => p.name === effectiveProject);
@@ -1138,6 +1539,7 @@ export default function App() {
     loading || (!trimmedInputUrl && !trimmedInputText && title === null && !error);
 
   const handleReset = useCallback(() => {
+    generationIdRef.current++;
     setInputUrl("");
     setInputText("");
     // useEffectで入力が空の時に title/cosenseUrl 等はクリアされるが、即時反映のため明示的にクリア
@@ -1161,6 +1563,7 @@ export default function App() {
     setShowTextCandidates(false);
     setTitleSourceLabel(null);
     setTextSourceLabel(null);
+    setLoading(false);
     hasAutoGeneratedRef.current = false;
     requestAnimationFrame(() => {
       document.getElementById("url-input")?.focus();
@@ -1221,8 +1624,8 @@ export default function App() {
       <main className="share-container">
         {view === "generate" ? (
           <>
-            <div className={`share-form${loading ? " is-generating" : ""}`}>
-              {loading && (
+            <div className={`share-form${loading || candidateAiLoading ? " is-generating" : ""}`}>
+              {(loading || candidateAiLoading) && (
                 <ShineBorder
                   borderWidth={1}
                   duration={8}
