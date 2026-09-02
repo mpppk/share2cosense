@@ -129,6 +129,7 @@ export default function App() {
     [],
   );
   const [candidateAiLoading, setCandidateAiLoading] = useState(false);
+  const [aiSelectLoading, setAiSelectLoading] = useState(false);
   const [showCandidates, setShowCandidates] = useState(false);
   const candidatesButtonRef = useRef<HTMLButtonElement>(null);
   const candidatesPopoverRef = useRef<HTMLDivElement>(null);
@@ -236,6 +237,7 @@ export default function App() {
       setCopied(false);
       setTitleCandidates([]);
       setCandidateAiLoading(false);
+      setAiSelectLoading(false);
       setShowCandidates(false);
       setTextCandidates([]);
       setShowTextCandidates(false);
@@ -433,36 +435,41 @@ export default function App() {
           if (projects.length > 0 && projectImmed) {
             let project = projectImmed;
             let aiResult: string | null = null;
-            if (aiProvider === "openRouter") {
-              if (!openRouterApiKey.trim()) {
-                if (!isCancelled()) setAiSelectError("APIキーが未設定です");
-              } else {
-                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+            setAiSelectLoading(true);
+            try {
+              if (aiProvider === "openRouter") {
+                if (!openRouterApiKey.trim()) {
+                  if (!isCancelled()) setAiSelectError("APIキーが未設定です");
+                } else {
+                  const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                    projects,
+                    immediateRawTitle,
+                    openRouterApiKey,
+                    savedOpenRouterModel,
+                  );
+                  if (isCancelled()) return;
+                  if (orProject) {
+                    project = orProject;
+                    aiResult = orProject;
+                  } else if (orError) {
+                    setAiSelectError(orError);
+                  }
+                }
+              } else if (aiProvider === "windowAi") {
+                const { project: aiProject, error: aiError } = await selectProjectWithAi(
                   projects,
                   immediateRawTitle,
-                  openRouterApiKey,
-                  savedOpenRouterModel,
                 );
                 if (isCancelled()) return;
-                if (orProject) {
-                  project = orProject;
-                  aiResult = orProject;
-                } else if (orError) {
-                  setAiSelectError(orError);
+                if (aiProject) {
+                  project = aiProject;
+                  aiResult = aiProject;
+                } else if (aiError) {
+                  setAiSelectError(aiError);
                 }
               }
-            } else if (aiProvider === "windowAi") {
-              const { project: aiProject, error: aiError } = await selectProjectWithAi(
-                projects,
-                immediateRawTitle,
-              );
-              if (isCancelled()) return;
-              if (aiProject) {
-                project = aiProject;
-                aiResult = aiProject;
-              } else if (aiError) {
-                setAiSelectError(aiError);
-              }
+            } finally {
+              if (!isCancelled()) setAiSelectLoading(false);
             }
             if (isCancelled()) return;
             if (project !== projectImmed && selectedProjectRef.current === projectImmed) {
@@ -706,36 +713,41 @@ export default function App() {
           let project = projectImmed;
           let aiResult: string | null = null;
           const targetRawTitle = finalRawTitle;
-          if (aiProvider === "openRouter") {
-            if (!openRouterApiKey.trim()) {
-              if (!isCancelled()) setAiSelectError("APIキーが未設定です");
-            } else {
-              const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+          setAiSelectLoading(true);
+          try {
+            if (aiProvider === "openRouter") {
+              if (!openRouterApiKey.trim()) {
+                if (!isCancelled()) setAiSelectError("APIキーが未設定です");
+              } else {
+                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                  projects,
+                  targetRawTitle,
+                  openRouterApiKey,
+                  savedOpenRouterModel,
+                );
+                if (isCancelled()) return;
+                if (orProject) {
+                  project = orProject;
+                  aiResult = orProject;
+                } else if (orError) {
+                  setAiSelectError(orError);
+                }
+              }
+            } else if (aiProvider === "windowAi") {
+              const { project: aiProject, error: aiError } = await selectProjectWithAi(
                 projects,
                 targetRawTitle,
-                openRouterApiKey,
-                savedOpenRouterModel,
               );
               if (isCancelled()) return;
-              if (orProject) {
-                project = orProject;
-                aiResult = orProject;
-              } else if (orError) {
-                setAiSelectError(orError);
+              if (aiProject) {
+                project = aiProject;
+                aiResult = aiProject;
+              } else if (aiError) {
+                setAiSelectError(aiError);
               }
             }
-          } else if (aiProvider === "windowAi") {
-            const { project: aiProject, error: aiError } = await selectProjectWithAi(
-              projects,
-              targetRawTitle,
-            );
-            if (isCancelled()) return;
-            if (aiProject) {
-              project = aiProject;
-              aiResult = aiProject;
-            } else if (aiError) {
-              setAiSelectError(aiError);
-            }
+          } finally {
+            if (!isCancelled()) setAiSelectLoading(false);
           }
           if (isCancelled()) return;
           const effectiveFinalTitle = `${titlePrefix}${finalRawTitle}`;
@@ -942,36 +954,41 @@ export default function App() {
           let project = projectImmed;
           let aiResult: string | null = null;
           const targetRawTitle = finalRawTitle;
-          if (aiProvider === "openRouter") {
-            if (!openRouterApiKey.trim()) {
-              if (!isCancelled()) setAiSelectError("APIキーが未設定です");
-            } else {
-              const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+          setAiSelectLoading(true);
+          try {
+            if (aiProvider === "openRouter") {
+              if (!openRouterApiKey.trim()) {
+                if (!isCancelled()) setAiSelectError("APIキーが未設定です");
+              } else {
+                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
+                  projects,
+                  targetRawTitle,
+                  openRouterApiKey,
+                  savedOpenRouterModel,
+                );
+                if (isCancelled()) return;
+                if (orProject) {
+                  project = orProject;
+                  aiResult = orProject;
+                } else if (orError) {
+                  setAiSelectError(orError);
+                }
+              }
+            } else if (aiProvider === "windowAi") {
+              const { project: aiProject, error: aiError } = await selectProjectWithAi(
                 projects,
                 targetRawTitle,
-                openRouterApiKey,
-                savedOpenRouterModel,
               );
               if (isCancelled()) return;
-              if (orProject) {
-                project = orProject;
-                aiResult = orProject;
-              } else if (orError) {
-                setAiSelectError(orError);
+              if (aiProject) {
+                project = aiProject;
+                aiResult = aiProject;
+              } else if (aiError) {
+                setAiSelectError(aiError);
               }
             }
-          } else if (aiProvider === "windowAi") {
-            const { project: aiProject, error: aiError } = await selectProjectWithAi(
-              projects,
-              targetRawTitle,
-            );
-            if (isCancelled()) return;
-            if (aiProject) {
-              project = aiProject;
-              aiResult = aiProject;
-            } else if (aiError) {
-              setAiSelectError(aiError);
-            }
+          } finally {
+            if (!isCancelled()) setAiSelectLoading(false);
           }
           if (isCancelled()) return;
           const effectiveFinalTitle = `${titlePrefix}${finalRawTitle}`;
@@ -1016,6 +1033,7 @@ export default function App() {
         if (!isCancelled()) {
           setLoading(false);
           setCandidateAiLoading(false);
+          setAiSelectLoading(false);
         }
       }
     },
@@ -1083,6 +1101,7 @@ export default function App() {
       setLastFetchedText(null);
       setTitleCandidates([]);
       setCandidateAiLoading(false);
+      setAiSelectLoading(false);
       setShowCandidates(false);
       setTextCandidates([]);
       setShowTextCandidates(false);
@@ -1558,6 +1577,7 @@ export default function App() {
     setLastFetchedText(null);
     setTitleCandidates([]);
     setCandidateAiLoading(false);
+    setAiSelectLoading(false);
     setShowCandidates(false);
     setTextCandidates([]);
     setShowTextCandidates(false);
@@ -1614,6 +1634,7 @@ export default function App() {
     [rebuildBodyFromText],
   );
 
+  const isBusy = loading || candidateAiLoading || aiSelectLoading || checkingExists;
   const hasCandidates = titleCandidates.length > 0;
   const isCandidatesButtonDisabled = loading || (!hasCandidates && !candidateAiLoading);
   const hasTextCandidates = textCandidates.length > 0;
@@ -1624,8 +1645,8 @@ export default function App() {
       <main className="share-container">
         {view === "generate" ? (
           <>
-            <div className={`share-form${loading || candidateAiLoading ? " is-generating" : ""}`}>
-              {(loading || candidateAiLoading) && (
+            <div className={`share-form${isBusy ? " is-generating" : ""}`}>
+              {isBusy && (
                 <ShineBorder
                   borderWidth={1}
                   duration={8}
