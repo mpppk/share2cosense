@@ -79,6 +79,16 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+/** ラベル行の右側に出す処理中インジケータ。スピナー+短い状態文言。 */
+function SectionStatus({ label }: { label: string }) {
+  return (
+    <span className="share-section-status" role="status">
+      <span className="share-section-spinner" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState<View>("generate");
   const [inputUrl, setInputUrl] = useState("");
@@ -1546,6 +1556,17 @@ export default function App() {
   const trimmedInputUrl = inputUrl.trim();
   const trimmedInputText = inputText.trim();
   const isValidUrl = isValidHttpUrl(trimmedInputUrl);
+  // セクション別の処理中表示。全体のborderアニメとは別に、どの欄が動いているかを示す。
+  const isBusy = loading || candidateAiLoading || aiSelectLoading || checkingExists;
+  const titleStatus = loading ? "取得中..." : candidateAiLoading ? "AI生成中..." : null;
+  const textStatus = loading ? "取得中..." : null;
+  const projectStatus = loading
+    ? "取得中..."
+    : aiSelectLoading
+      ? "AI選択中..."
+      : checkingExists
+        ? "確認中..."
+        : null;
   const showTitleField = loading || title !== null || isValidUrl || trimmedInputText !== "";
   const showCosenseActions = cosenseUrl !== null && title !== null && title.trim() !== "";
   const isRefreshDisabled =
@@ -1634,7 +1655,6 @@ export default function App() {
     [rebuildBodyFromText],
   );
 
-  const isBusy = loading || candidateAiLoading || aiSelectLoading || checkingExists;
   const hasCandidates = titleCandidates.length > 0;
   const isCandidatesButtonDisabled = loading || (!hasCandidates && !candidateAiLoading);
   const hasTextCandidates = textCandidates.length > 0;
@@ -1729,7 +1749,11 @@ export default function App() {
                   本文テキスト
                 </label>
                 <div className="share-label-actions">
-                  {textSourceLabel && <span className="share-source-badge">{textSourceLabel}</span>}
+                  {textStatus ? (
+                    <SectionStatus label={textStatus} />
+                  ) : (
+                    textSourceLabel && <span className="share-source-badge">{textSourceLabel}</span>
+                  )}
                   <div className="share-candidates-wrapper">
                     <button
                       ref={textCandidatesButtonRef}
@@ -1794,6 +1818,7 @@ export default function App() {
                 rows={3}
                 placeholder="共有するテキスト（任意、URLと併用可）"
                 autoComplete="off"
+                aria-busy={loading}
               />
 
               {showTitleField && (
@@ -1803,8 +1828,12 @@ export default function App() {
                       タイトル
                     </label>
                     <div className="share-label-actions">
-                      {titleSourceLabel && (
-                        <span className="share-source-badge">{titleSourceLabel}</span>
+                      {titleStatus ? (
+                        <SectionStatus label={titleStatus} />
+                      ) : (
+                        titleSourceLabel && (
+                          <span className="share-source-badge">{titleSourceLabel}</span>
+                        )
                       )}
                       <div className="share-candidates-wrapper">
                         <button
@@ -1877,6 +1906,7 @@ export default function App() {
                     placeholder={loading ? "タイトルを取得中..." : "タイトルを入力"}
                     autoComplete="off"
                     spellCheck={false}
+                    aria-busy={titleStatus !== null}
                   />
                   {aiTitleError && (
                     <p className="share-warning" role="alert">
@@ -1907,14 +1937,21 @@ export default function App() {
                 </div>
               ) : (
                 <div className="share-project-field">
-                  <label htmlFor="project-select" className="share-label">
-                    作成先プロジェクト
-                  </label>
+                  <div className="share-label-row">
+                    <label htmlFor="project-select" className="share-label">
+                      作成先プロジェクト
+                    </label>
+                    <div className="share-label-actions">
+                      {projectStatus && <SectionStatus label={projectStatus} />}
+                    </div>
+                  </div>
                   <select
                     id="project-select"
                     value={selectedProject || defaultProject || projects[0]?.name || ""}
                     onChange={(e) => void handleProjectChange(e.target.value)}
                     className="share-input share-select"
+                    disabled={loading || aiSelectLoading}
+                    aria-busy={projectStatus !== null}
                   >
                     {projects.map((p) => (
                       <option key={p.name} value={p.name}>
