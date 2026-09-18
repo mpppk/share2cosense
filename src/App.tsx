@@ -3,6 +3,8 @@ import { Analytics } from "@vercel/analytics/react";
 import {
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_PROJECT,
+  JEV_CONFIDENCE_THRESHOLD,
+  JEV_MODEL,
   OPENROUTER_FALLBACK_MODEL,
   OPENROUTER_MODEL_PRESETS,
 } from "./config";
@@ -20,6 +22,7 @@ import {
   getOpenRouterModel,
   getProjects,
   getTitlePrefix,
+  getUseJevForProjectSelect,
   setAiProvider,
   setAiCustomPrompt,
   setAllowOpenRouterFallbackModel,
@@ -29,15 +32,16 @@ import {
   setOpenRouterApiKey,
   setOpenRouterModel,
   setTitlePrefix,
+  setUseJevForProjectSelect,
   updateProject,
   type AiProvider,
   type Project,
 } from "./lib/db";
 import { openCosenseUrl, type LinkOpenMode } from "./lib/openExternal";
 import type { SharedContent } from "./lib/cosense";
-import { getWindowAiAvailability, selectProjectWithAi } from "./lib/aiSelect";
+import { getWindowAiAvailability } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
-import { selectProjectWithOpenRouter } from "./lib/openRouterSelect";
+import { selectProjectWithSettings } from "./lib/selectProject";
 import { isOpenRouterModelPreset, validateOpenRouterModel } from "./lib/openRouterModels";
 import { fetchTitleSource } from "./lib/fetchTitle";
 import { generateTitleFromTextDetailed } from "./lib/generateTitle";
@@ -123,6 +127,7 @@ export default function App() {
   const modelValidateTimerRef = useRef<number | null>(null);
   const modelValidateSeqRef = useRef(0);
   const [allowOpenRouterFallbackModel, setAllowOpenRouterFallbackModelState] = useState(false);
+  const [useJevForProjectSelect, setUseJevForProjectSelectState] = useState(false);
   const [titlePrefix, setTitlePrefixState] = useState("");
   const [aiCustomPrompt, setAiCustomPromptState] = useState("");
   const [bodyTemplate, setBodyTemplateState] = useState("{{url}}");
@@ -132,6 +137,7 @@ export default function App() {
   const [generatedBody, setGeneratedBody] = useState<string | null>(null);
   const [aiSuggestedProject, setAiSuggestedProject] = useState<string | null>(null);
   const [aiSelectError, setAiSelectError] = useState<string | null>(null);
+  const [aiSelectNotice, setAiSelectNotice] = useState<string | null>(null);
   const [aiTitleError, setAiTitleError] = useState<string | null>(null);
   const [lastFetchedUrl, setLastFetchedUrl] = useState<string | null>(null);
   const [lastFetchedText, setLastFetchedText] = useState<string | null>(null);
@@ -177,6 +183,7 @@ export default function App() {
         bodyTpl,
         openMode,
         fallbackModel,
+        useJev,
       ] = await Promise.all([
         getProjects(),
         getDefaultProject(),
@@ -188,6 +195,7 @@ export default function App() {
         getBodyTemplate(),
         getLinkOpenMode(),
         getAllowOpenRouterFallbackModel(),
+        getUseJevForProjectSelect(),
       ]);
       setProjects(all);
       setDefaultProjectState(def ?? "");
@@ -197,6 +205,7 @@ export default function App() {
       setSavedOpenRouterModel(orModel);
       setModelValidation(IDLE_MODEL_VALIDATION);
       setAllowOpenRouterFallbackModelState(fallbackModel);
+      setUseJevForProjectSelectState(useJev);
       setTitlePrefixState(prefix);
       setAiCustomPromptState(customPrompt);
       setBodyTemplateState(bodyTpl);
@@ -252,6 +261,7 @@ export default function App() {
       setTextCandidates([]);
       setShowTextCandidates(false);
       setAiSelectError(null);
+      setAiSelectNotice(null);
       setAiTitleError(null);
       setPageExists(null);
       setCheckingExists(false);
@@ -447,36 +457,26 @@ export default function App() {
             let aiResult: string | null = null;
             setAiSelectLoading(true);
             try {
-              if (aiProvider === "openRouter") {
-                if (!openRouterApiKey.trim()) {
-                  if (!isCancelled()) setAiSelectError("APIキーが未設定です");
-                } else {
-                  const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
-                    projects,
-                    immediateRawTitle,
-                    openRouterApiKey,
-                    savedOpenRouterModel,
-                  );
-                  if (isCancelled()) return;
-                  if (orProject) {
-                    project = orProject;
-                    aiResult = orProject;
-                  } else if (orError) {
-                    setAiSelectError(orError);
-                  }
-                }
-              } else if (aiProvider === "windowAi") {
-                const { project: aiProject, error: aiError } = await selectProjectWithAi(
-                  projects,
-                  immediateRawTitle,
-                );
-                if (isCancelled()) return;
-                if (aiProject) {
-                  project = aiProject;
-                  aiResult = aiProject;
-                } else if (aiError) {
-                  setAiSelectError(aiError);
-                }
+              const {
+                project: picked,
+                error: pickError,
+                notice: pickNotice,
+              } = await selectProjectWithSettings({
+                projects,
+                title: immediateRawTitle,
+                aiProvider,
+                openRouterApiKey,
+                openRouterModel: savedOpenRouterModel,
+                useJev: useJevForProjectSelect,
+              });
+              if (isCancelled()) return;
+              if (picked) {
+                project = picked;
+                aiResult = picked;
+              } else if (pickError) {
+                setAiSelectError(pickError);
+              } else if (pickNotice) {
+                setAiSelectNotice(pickNotice);
               }
             } finally {
               if (!isCancelled()) setAiSelectLoading(false);
@@ -725,36 +725,26 @@ export default function App() {
           const targetRawTitle = finalRawTitle;
           setAiSelectLoading(true);
           try {
-            if (aiProvider === "openRouter") {
-              if (!openRouterApiKey.trim()) {
-                if (!isCancelled()) setAiSelectError("APIキーが未設定です");
-              } else {
-                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
-                  projects,
-                  targetRawTitle,
-                  openRouterApiKey,
-                  savedOpenRouterModel,
-                );
-                if (isCancelled()) return;
-                if (orProject) {
-                  project = orProject;
-                  aiResult = orProject;
-                } else if (orError) {
-                  setAiSelectError(orError);
-                }
-              }
-            } else if (aiProvider === "windowAi") {
-              const { project: aiProject, error: aiError } = await selectProjectWithAi(
-                projects,
-                targetRawTitle,
-              );
-              if (isCancelled()) return;
-              if (aiProject) {
-                project = aiProject;
-                aiResult = aiProject;
-              } else if (aiError) {
-                setAiSelectError(aiError);
-              }
+            const {
+              project: picked,
+              error: pickError,
+              notice: pickNotice,
+            } = await selectProjectWithSettings({
+              projects,
+              title: targetRawTitle,
+              aiProvider,
+              openRouterApiKey,
+              openRouterModel: savedOpenRouterModel,
+              useJev: useJevForProjectSelect,
+            });
+            if (isCancelled()) return;
+            if (picked) {
+              project = picked;
+              aiResult = picked;
+            } else if (pickError) {
+              setAiSelectError(pickError);
+            } else if (pickNotice) {
+              setAiSelectNotice(pickNotice);
             }
           } finally {
             if (!isCancelled()) setAiSelectLoading(false);
@@ -966,36 +956,26 @@ export default function App() {
           const targetRawTitle = finalRawTitle;
           setAiSelectLoading(true);
           try {
-            if (aiProvider === "openRouter") {
-              if (!openRouterApiKey.trim()) {
-                if (!isCancelled()) setAiSelectError("APIキーが未設定です");
-              } else {
-                const { project: orProject, error: orError } = await selectProjectWithOpenRouter(
-                  projects,
-                  targetRawTitle,
-                  openRouterApiKey,
-                  savedOpenRouterModel,
-                );
-                if (isCancelled()) return;
-                if (orProject) {
-                  project = orProject;
-                  aiResult = orProject;
-                } else if (orError) {
-                  setAiSelectError(orError);
-                }
-              }
-            } else if (aiProvider === "windowAi") {
-              const { project: aiProject, error: aiError } = await selectProjectWithAi(
-                projects,
-                targetRawTitle,
-              );
-              if (isCancelled()) return;
-              if (aiProject) {
-                project = aiProject;
-                aiResult = aiProject;
-              } else if (aiError) {
-                setAiSelectError(aiError);
-              }
+            const {
+              project: picked,
+              error: pickError,
+              notice: pickNotice,
+            } = await selectProjectWithSettings({
+              projects,
+              title: targetRawTitle,
+              aiProvider,
+              openRouterApiKey,
+              openRouterModel: savedOpenRouterModel,
+              useJev: useJevForProjectSelect,
+            });
+            if (isCancelled()) return;
+            if (picked) {
+              project = picked;
+              aiResult = picked;
+            } else if (pickError) {
+              setAiSelectError(pickError);
+            } else if (pickNotice) {
+              setAiSelectNotice(pickNotice);
             }
           } finally {
             if (!isCancelled()) setAiSelectLoading(false);
@@ -1054,6 +1034,7 @@ export default function App() {
       openRouterApiKey,
       savedOpenRouterModel,
       allowOpenRouterFallbackModel,
+      useJevForProjectSelect,
       titlePrefix,
       aiCustomPrompt,
       bodyTemplate,
@@ -1102,6 +1083,7 @@ export default function App() {
       setGeneratedBody(null);
       setAiSuggestedProject(null);
       setAiSelectError(null);
+      setAiSelectNotice(null);
       setAiTitleError(null);
       setPageExists(null);
       setCheckingExists(false);
@@ -1414,6 +1396,15 @@ export default function App() {
     await handleOpenRouterModelChange(model);
   };
 
+  const handleUseJevForProjectSelectChange = async (enabled: boolean) => {
+    setUseJevForProjectSelectState(enabled);
+    try {
+      await setUseJevForProjectSelect(enabled);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "設定の保存に失敗しました");
+    }
+  };
+
   const handleAllowOpenRouterFallbackModelChange = async (enabled: boolean) => {
     setAllowOpenRouterFallbackModelState(enabled);
     try {
@@ -1589,6 +1580,7 @@ export default function App() {
     setSelectedProject(null);
     setAiSuggestedProject(null);
     setAiSelectError(null);
+    setAiSelectNotice(null);
     setAiTitleError(null);
     setPageExists(null);
     setCheckingExists(false);
@@ -1966,6 +1958,9 @@ export default function App() {
                       AI自動選択に失敗しました（{aiSelectError}
                       ）。デフォルトプロジェクトを使用します
                     </p>
+                  )}
+                  {aiSelectNotice && !aiSelectError && (
+                    <p className="share-project-select">{aiSelectNotice}</p>
                   )}
                   {aiSuggestedProject &&
                     selectedProject &&
@@ -2395,6 +2390,24 @@ export default function App() {
                         通常の方法でタイトルを取得できない場合に、タイトル取得専用モデル（
                         {OPENROUTER_FALLBACK_MODEL}）を利用します。初期値はオフ。例:
                         ChatGPTの共有URLは外部プロキシからのアクセスを遮断しているため、ChatGPT系モデルのブラウジング経由でタイトルのみ取得します。
+                      </p>
+                    </div>
+                    <div className="share-project-field">
+                      <label className="share-project-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={useJevForProjectSelect}
+                          onChange={(e) =>
+                            void handleUseJevForProjectSelectChange(e.target.checked)
+                          }
+                        />
+                        プロジェクトの自動選択に択一特化モデルを使う
+                      </label>
+                      <p className="share-settings-description" style={{ marginTop: "8px" }}>
+                        プロジェクト選択だけを択一特化モデル（{JEV_MODEL}
+                        ）に任せます。初期値はオフ。回答は必ず登録済みプロジェクトのいずれかになるため解釈失敗が起きず、確信度が
+                        {Math.round(JEV_CONFIDENCE_THRESHOLD * 100)}
+                        %未満のときは自動で切り替えず候補の提示だけを行います。タイトル生成は上で指定したモデルのままです。
                       </p>
                     </div>
                   </>

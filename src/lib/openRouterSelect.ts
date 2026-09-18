@@ -1,5 +1,10 @@
 import { OPENROUTER_FALLBACK_MODEL } from "../config";
 import type { Project } from "./db";
+import {
+  openRouterErrorMessage,
+  openRouterHeaders,
+  openRouterThrownMessage,
+} from "./openRouterApi";
 import { X_TITLE_MAX_LENGTH } from "./xPost";
 
 /**
@@ -18,27 +23,13 @@ async function postOpenRouterChatDetailed(
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer":
-          typeof window !== "undefined" ? window.location.origin : "app://share2cosense",
-        "X-Title": "share2cosense",
-      },
+      headers: openRouterHeaders(apiKey),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!res.ok) {
-      const reason =
-        res.status === 401
-          ? "APIキーが無効です"
-          : res.status === 402
-            ? "クレジットが不足しています"
-            : res.status === 429
-              ? "レート制限中です"
-              : `APIエラー(HTTP ${res.status})`;
-      return { content: null, error: reason };
+      return { content: null, error: openRouterErrorMessage(res.status) };
     }
 
     const data = (await res.json()) as {
@@ -56,10 +47,7 @@ async function postOpenRouterChatDetailed(
     }
     return { content };
   } catch (e) {
-    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
-      return { content: null, error: "タイムアウトしました" };
-    }
-    return { content: null, error: "ネットワークエラー" };
+    return { content: null, error: openRouterThrownMessage(e) };
   }
 }
 

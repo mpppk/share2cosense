@@ -231,6 +231,25 @@ export async function setAllowOpenRouterFallbackModel(enabled: boolean): Promise
   await db.put("settings", { key: "allowOpenRouterFallbackModel", value: String(enabled) });
 }
 
+/**
+ * Whether AI project selection uses Jev instead of the configured OpenRouter
+ * model. Jev only answers typed questions, so this covers project selection
+ * alone and title generation keeps using the configured model. Off by default.
+ */
+export async function getUseJevForProjectSelect(): Promise<boolean> {
+  const db = await getDB();
+  const record = await db.get("settings", "useJevForProjectSelect");
+  if (!record) {
+    return false;
+  }
+  return record.value === "true";
+}
+
+export async function setUseJevForProjectSelect(enabled: boolean): Promise<void> {
+  const db = await getDB();
+  await db.put("settings", { key: "useJevForProjectSelect", value: String(enabled) });
+}
+
 function isValidLinkOpenMode(value: string): value is LinkOpenMode {
   return value === "auto" || value === "share" || value === "newTab";
 }
