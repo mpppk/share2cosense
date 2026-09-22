@@ -38,6 +38,7 @@ import {
   type Project,
 } from "./lib/db";
 import { openCosenseUrl, type LinkOpenMode } from "./lib/openExternal";
+import { requestStoragePersistence, type StoragePersistence } from "./lib/storagePersistence";
 import type { SharedContent } from "./lib/cosense";
 import { getWindowAiAvailability } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
@@ -48,6 +49,7 @@ import { generateTitleFromTextDetailed } from "./lib/generateTitle";
 import { SHARED_TEXT_MAX_LENGTH } from "./lib/cosense";
 import { X_TITLE_MAX_LENGTH, isXPostUrl, truncateText, truncateTitle } from "./lib/xPost";
 import { ShineBorder } from "./components/ShineBorder";
+import { StoragePersistenceSettings } from "./components/StoragePersistenceSettings";
 import "./App.css";
 
 type View = "generate" | "usage" | "settings";
@@ -115,6 +117,9 @@ export default function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const [aiProvider, setAiProviderState] = useState<AiProvider>("windowAi");
   const [windowAiAvailable, setWindowAiAvailable] = useState(false);
+  // null は「まだ確認中」。永続化されていない場合だけ設定画面で注意を出す
+  const [storagePersistence, setStoragePersistence] = useState<StoragePersistence | null>(null);
+  const [persistRequesting, setPersistRequesting] = useState(false);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
   const [openRouterModel, setOpenRouterModelState] = useState(DEFAULT_OPENROUTER_MODEL);
@@ -170,6 +175,17 @@ export default function App() {
     });
   }, []);
 
+  // プロジェクトと設定はIndexedDBにしか無いので、退避対象のbest-effort領域から
+  // 永続化領域へ移すよう起動時にブラウザへ依頼する。設定画面から再試行もできる
+  const requestPersistence = useCallback(async () => {
+    setPersistRequesting(true);
+    try {
+      setStoragePersistence(await requestStoragePersistence());
+    } finally {
+      setPersistRequesting(false);
+    }
+  }, []);
+
   const loadProjects = useCallback(async () => {
     try {
       const [
@@ -217,8 +233,9 @@ export default function App() {
 
   useEffect(() => {
     void loadProjects();
+    void requestPersistence();
     refreshWindowAiAvailability();
-  }, [loadProjects, refreshWindowAiAvailability]);
+  }, [loadProjects, requestPersistence, refreshWindowAiAvailability]);
 
   useEffect(() => {
     titleRef.current = title;
@@ -2472,6 +2489,12 @@ export default function App() {
                   </span>
                 </div>
               </div>
+
+              <StoragePersistenceSettings
+                persistence={storagePersistence}
+                requesting={persistRequesting}
+                onRequest={() => void requestPersistence()}
+              />
 
               <div className="share-project-list">
                 <div className="share-project-list-header">
