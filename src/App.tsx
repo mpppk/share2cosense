@@ -38,6 +38,7 @@ import {
   type Project,
 } from "./lib/db";
 import { openCosenseUrl, type LinkOpenMode } from "./lib/openExternal";
+import { requestStoragePersistence, type StoragePersistence } from "./lib/storagePersistence";
 import type { SharedContent } from "./lib/cosense";
 import { getWindowAiAvailability } from "./lib/aiSelect";
 import { checkPageExists } from "./lib/existsCheck";
@@ -115,6 +116,9 @@ export default function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const [aiProvider, setAiProviderState] = useState<AiProvider>("windowAi");
   const [windowAiAvailable, setWindowAiAvailable] = useState(false);
+  // null は「まだ確認中」。永続化されていない場合だけ設定画面で注意を出す
+  const [storagePersistence, setStoragePersistence] = useState<StoragePersistence | null>(null);
+  const [persistRequesting, setPersistRequesting] = useState(false);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [openRouterApiKey, setOpenRouterApiKeyState] = useState("");
   const [openRouterModel, setOpenRouterModelState] = useState(DEFAULT_OPENROUTER_MODEL);
@@ -170,6 +174,17 @@ export default function App() {
     });
   }, []);
 
+  // プロジェクトと設定はIndexedDBにしか無いので、退避対象のbest-effort領域から
+  // 永続化領域へ移すよう起動時にブラウザへ依頼する。設定画面から再試行もできる
+  const requestPersistence = useCallback(async () => {
+    setPersistRequesting(true);
+    try {
+      setStoragePersistence(await requestStoragePersistence());
+    } finally {
+      setPersistRequesting(false);
+    }
+  }, []);
+
   const loadProjects = useCallback(async () => {
     try {
       const [
@@ -217,8 +232,9 @@ export default function App() {
 
   useEffect(() => {
     void loadProjects();
+    void requestPersistence();
     refreshWindowAiAvailability();
-  }, [loadProjects, refreshWindowAiAvailability]);
+  }, [loadProjects, requestPersistence, refreshWindowAiAvailability]);
 
   useEffect(() => {
     titleRef.current = title;
@@ -2471,6 +2487,43 @@ export default function App() {
                       .replaceAll("{{date}}", new Date().toISOString().slice(0, 10))}
                   </span>
                 </div>
+              </div>
+
+              <div className="share-ai-settings">
+                <h3>データの保存</h3>
+                {storagePersistence === null && (
+                  <p className="share-loading">保存領域の状態を確認中...</p>
+                )}
+                {storagePersistence === "persisted" && (
+                  <p className="share-settings-description">
+                    保存領域は永続化されています。プロジェクトと設定は、ブラウザのサイトデータを削除しない限り保持されます。
+                  </p>
+                )}
+                {storagePersistence === "unsupported" && (
+                  <p className="share-warning">
+                    このブラウザは保存領域の永続化に対応していません。端末の空き容量が少なくなると、登録したプロジェクトや設定が削除されることがあります。
+                  </p>
+                )}
+                {storagePersistence === "bestEffort" && (
+                  <>
+                    <p className="share-warning">
+                      保存領域が永続化されていません。端末の空き容量が少なくなると、登録したプロジェクトや設定がブラウザによって削除されることがあります。
+                    </p>
+                    <p className="share-settings-description">
+                      ホーム画面に追加（PWAとしてインストール）した状態でリクエストすると許可されやすくなります。
+                    </p>
+                    <div className="share-project-actions">
+                      <button
+                        type="button"
+                        className="share-button small"
+                        onClick={() => void requestPersistence()}
+                        disabled={persistRequesting}
+                      >
+                        {persistRequesting ? "リクエスト中..." : "永続化をリクエスト"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="share-project-list">
